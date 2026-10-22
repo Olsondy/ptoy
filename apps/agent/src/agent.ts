@@ -1,11 +1,11 @@
 import { type JobContext, ServerOptions, cli, defineAgent, log } from '@livekit/agents';
 import { RoomEvent, type RemoteParticipant } from '@livekit/rtc-node';
 import { fileURLToPath } from 'node:url';
-import { echoPipeline } from './pipelines/echo.js';
+import { transcribePipeline } from './pipelines/transcribe.js';
 import type { CallPipeline } from './pipelines/types.js';
 
-/** Swap this for the VAD/STT/LLM/TTS pipeline in M1 (#5). */
-const pipeline: CallPipeline = echoPipeline;
+/** M1 #8: VAD + STT → user subtitles. #10 adds LLM/TTS. (`echoPipeline` in ./pipelines/echo.ts is the M0 loopback.) */
+const pipeline: CallPipeline = transcribePipeline;
 
 export default defineAgent({
   entry: async (ctx: JobContext) => {
