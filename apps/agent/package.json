@@ -8,7 +8,8 @@
     "start": "tsx --env-file-if-exists=.env src/agent.ts start",
     "dev:token": "tsx watch --env-file-if-exists=.env src/token-server.ts",
     "start:token": "tsx --env-file-if-exists=.env src/token-server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@livekit/agents": "^1.9.3",
