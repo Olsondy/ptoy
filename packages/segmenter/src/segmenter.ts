@@ -15,11 +15,17 @@ export interface SegmenterOptions {
   readonly firstSegmentMinChars?: number;
   /** Force-cut the first segment after this many content characters if no punctuation arrived. Default 12. */
   readonly firstSegmentMaxChars?: number;
+  /**
+   * Later segments longer than this many content characters without a sentence
+   * ender are cut at the last comma inside the window, else hard-cut. Default 40.
+   */
+  readonly maxSegmentChars?: number;
 }
 
 export const DEFAULT_OPTIONS: Required<SegmenterOptions> = {
   firstSegmentMinChars: 2,
   firstSegmentMaxChars: 12,
+  maxSegmentChars: 40,
 };
 
 export interface Segmenter {
@@ -52,21 +58,25 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
    */
   function findCut(gs: readonly string[]): Cut | null {
     const minContent = firstDone ? 1 : opts.firstSegmentMinChars;
-    const maxContent = firstDone ? Infinity : opts.firstSegmentMaxChars;
+    const maxContent = firstDone ? opts.maxSegmentChars : opts.firstSegmentMaxChars;
     let content = 0;
+    let lastCommaEnd: number | null = null;
     for (let i = 0; i < gs.length; i++) {
       const g = gs[i]!;
       if (isContent(g)) {
-        if (content === maxContent) return { end: i, reason: "length" };
+        if (content === maxContent) return { end: lastCommaEnd ?? i, reason: "length" };
         content++;
         continue;
       }
       const b = boundaryAt(gs, i);
       if (b === "pending") return null;
       if (b === null || content < minContent) continue;
-      if (b === "comma" && firstDone) continue;
       let end = i + 1;
       while (end < gs.length && isTrailing(gs[end]!)) end++;
+      if (b === "comma" && firstDone) {
+        lastCommaEnd = end;
+        continue;
+      }
       if (end === gs.length) return null;
       return { end, reason: b };
     }
