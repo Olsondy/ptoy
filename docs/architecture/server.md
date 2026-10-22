@@ -142,3 +142,31 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - IndexTTS 安装的是非官方版本（带语言选择、预设、术语表），阶段 2 需要阅读它的 `webui.py`，找到底层推理调用方式
 - 扩散步数降低后音质和速度的取舍，需要实测
 - 轮次检测模型对中文的效果，需要实测
+
+## 11. 轮次检测与 STT 插件（M1 #8 实测）
+
+**链路**：`inference.VAD`（Silero）切出整句 → `SenseVoiceSTT`（`apps/agent/src/stt/sensevoice.ts`，非流式，框架用 `stt.StreamAdapter` 包装）把 48kHz 帧降到 16kHz 单声道 s16le 后 `POST /asr` → 最终文本经 LiveKit 标准 `lk.transcription` 文本流（发送者是用户本人）到浏览器，`UserSubtitle` 显示最新一句。VAD 和轮次模型都走 `@livekit/local-inference`，进程内推理，不调 LiveKit Cloud；它有 darwin-x64/arm64、win32-x64 预编译包。`@livekit/agents-plugin-silero` / `-livekit` 依赖 `onnxruntime-node`，后者已不提供 Intel Mac 二进制，所以没用。
+
+**默认参数**（环境变量见 `apps/agent/.env.example`）：
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `TURN_DETECTOR` | `vad` | VAD 静音即结束轮次；`eot` 改用 LiveKit 本地音频轮次模型 `turn-detector-v1-mini`（叠加在 VAD 上） |
+| `VAD_MIN_SILENCE_MS` | 550 | 静音超过它才切句。它同时决定送 ASR 的音频怎么切 |
+| `ENDPOINTING_MIN_DELAY_MS` / `MAX` | 500 / 3000 | VAD 模式下实际等待 = max(VAD 静音, minDelay)；`eot` 判定“没说完”时等 maxDelay |
+| `ASR_TIMEOUT_MS` | 5000 | 单次识别超时 |
+
+**实测**（Mac，`say -v Ting-Ting` 合成 48kHz 语音，经本地 LiveKit 发给 Agent；句中停顿是去掉 TTS 自带尾部静音后插入的纯静音）：
+
+| 句中停顿 | `vad` | `eot`（v1-mini，zh 阈值 0.355） |
+|---|---|---|
+| 200 / 400 / 600ms | 不切，一整句 | 不切 |
+| 900ms | 切成两轮 | 切成两轮（概率 0.356，刚过阈值） |
+| 1200ms | 切成两轮 | 合成一轮（0.22） |
+| 完整句子的轮次结束延迟 | VAD 结束后约 0.25–0.4s（就是 ASR 耗时） | 5 句里 3 句被判“没说完”（0.13–0.31），要多等约 2.4s |
+
+**结论**：默认用 `vad` + 550ms。600ms 以内的句中停顿不会切句；延迟符合 §7 的 500ms 端点预算。`eot` 在合成语音上会把大量完整句子判成“没说完”，直接把延迟拉高到 3s，换来的只是偶尔合并 1s 以上的停顿。合成语音的语调不够自然，结论需要真人麦克风复核：试 `TURN_DETECTOR=eot`，看 `eot prediction` 日志里的 `endOfTurnProbability`。
+
+**情绪/事件给 #13**：每条 FINAL_TRANSCRIPT 的 `alternatives[0].metadata` 带 `{ emotion, events, inferenceMs, audioMs }`，用 `asrMetadataOf(ev)` 读取；或者给 `SenseVoiceSTT` 传 `onTranscript`，每识别一句回调一次（当前用于日志）。#13 可以记下本轮各句的情绪，在 `Agent.onUserTurnCompleted(chatCtx, newMessage)` 里给 `newMessage` 加 `[用户语气:X]` 前缀。字幕走 STT 原文，不受影响。
+
+**ASR 故障**：超时、连不上、4xx/5xx、返回格式错误都会抛 `AsrError`（`kind` 取 `timeout` / `unreachable` / `service` / `bad_response`），记 error 日志，同时作为可恢复的 `stt_error` 发出，会话不会关闭。Pipeline 把面向用户的提示写到 Agent 的参与者属性 `ptoy.stt_error`，字幕位置显示；下一句识别成功后清空。
