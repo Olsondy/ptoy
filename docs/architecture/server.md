@@ -54,7 +54,7 @@
 
 ## 4. 关键选型
 
-决策理由详见 `docs/decisions/0001`–`0006`。
+决策理由详见 `docs/decisions/0001`–`0006`。情绪标签链路的流程图与约定见 `docs/architecture/emotion-pipeline.md`。
 
 | 决策 | 选择 | 理由 |
 |---|---|---|
