@@ -1,0 +1,17 @@
+{
+  "groups": {
+    "thinking": "思考类：用户提问、需要想一下再答",
+    "ack": "同意/应答类：用户提出请求或陈述，先应一声",
+    "empathy": "共情类：用户在倾诉、抱怨或情绪低落"
+  },
+  "fillers": [
+    { "id": "thinking_en", "group": "thinking", "text": "嗯…" },
+    { "id": "thinking_wo_xiang_xiang", "group": "thinking", "text": "我想想" },
+    { "id": "thinking_rang_wo_xiang_xiang", "group": "thinking", "text": "让我想想啊" },
+    { "id": "ack_hao_de", "group": "ack", "text": "好的，" },
+    { "id": "ack_en_en", "group": "ack", "text": "嗯嗯" },
+    { "id": "ack_hao_ya", "group": "ack", "text": "好呀", "emotion": { "喜": 0.4 } },
+    { "id": "empathy_zhe_yang_a", "group": "empathy", "text": "啊，这样啊" },
+    { "id": "empathy_wo_ming_bai", "group": "empathy", "text": "嗯，我明白" }
+  ]
+}
