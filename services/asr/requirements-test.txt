@@ -1,0 +1,7 @@
+# Test-only deps. The fake-model tests need nothing from requirements.txt's model stack
+# (torch/funasr are imported lazily inside the real model loader).
+fastapi>=0.110
+uvicorn>=0.29
+numpy<2
+pytest>=8
+httpx>=0.27
