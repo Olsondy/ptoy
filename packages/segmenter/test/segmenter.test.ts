@@ -92,3 +92,24 @@ describe("ASCII punctuation", () => {
     expect(texts(s.end())).toEqual(["版本3.0好"]);
   });
 });
+
+describe("length fallback for long unpunctuated text", () => {
+  const long = "这是一段非常非常长的话但是模型一直没有输出任何句号";
+
+  it("prefers cutting at the last comma inside the window", () => {
+    const out = texts(run(chars(`好的，${long}，还有更多的内容继续往下说没有停下来的意思。`), { maxSegmentChars: 30 }));
+    expect(out).toEqual(["好的，", `${long}，`, "还有更多的内容继续往下说没有停下来的意思。"]);
+  });
+
+  it("hard-cuts at maxSegmentChars when there is no comma", () => {
+    const body = "一二三四五六七八九十".repeat(5);
+    const out = texts(run(chars(`好的，${body}`), { maxSegmentChars: 20 }));
+    expect(out).toEqual(["好的，", body.slice(0, 20), body.slice(20, 40), body.slice(40)]);
+  });
+
+  it("defaults to 40 characters", () => {
+    const body = "啊".repeat(100);
+    const out = texts(run(chars(`好的，${body}`)));
+    expect(out.slice(1).map((t) => t.length)).toEqual([40, 40, 20]);
+  });
+});
