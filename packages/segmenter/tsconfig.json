@@ -3,7 +3,7 @@
   "compilerOptions": {
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "lib": ["ES2022", "ES2022.Intl"],
+    "lib": ["ES2024"],
     "types": []
   },
   "include": ["src", "test"]

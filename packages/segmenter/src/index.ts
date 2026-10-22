@@ -13,3 +13,4 @@ export {
   type Segmenter,
   type SegmenterOptions,
 } from "./segmenter.ts";
+export { segmentStream } from "./stream.ts";
