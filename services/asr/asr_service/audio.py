@@ -57,7 +57,7 @@ def _decode_wav(body: bytes) -> np.ndarray:
             channels, width, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
             frames = w.readframes(w.getnframes())
     except (wave.Error, EOFError) as exc:
-        raise AudioError(422, "invalid_wav", f"cannot parse WAV: {exc}") from exc
+        raise AudioError(422, "invalid_wav", "body is not a valid PCM WAV file") from exc
     if rate != SAMPLE_RATE:
         raise AudioError(422, "unsupported_sample_rate", f"sample rate must be {SAMPLE_RATE}, got {rate}")
     if channels != 1:

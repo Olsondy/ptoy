@@ -138,6 +138,10 @@ python3 -m venv .venv
 ```sh
 conda create -n ptoy-asr python=3.11 -y
 conda run -n ptoy-asr pip install "torch==2.2.2" "torchaudio==2.2.2"
-conda run -n ptoy-asr pip install -r requirements.txt -r requirements-test.txt
+conda run -n ptoy-asr pip install -r requirements.txt -r requirements-test.txt "numba==0.60.0" "llvmlite==0.43.0"
 ASR_INTEGRATION=1 conda run -n ptoy-asr python -m pytest -s
 ```
+
+Intel Mac 上新版 `llvmlite`（`librosa` → `numba` 的依赖）没有预编译 wheel，所以要固定 `numba==0.60.0` / `llvmlite==0.43.0`；Windows 不需要。
+
+Mac 实测（i7-6820HQ，4 线程，仅供参考，以 Windows 本机数据为准）：3.8 秒语音推理 220–300ms，10.4 秒语音 580–690ms。
