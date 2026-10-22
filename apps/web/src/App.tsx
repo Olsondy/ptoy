@@ -1,4 +1,5 @@
 import { RoomAudioRenderer, RoomContext } from '@livekit/components-react';
+import { CallOrb } from './orb/CallOrb';
 import { type CallStatus, useCall } from './useCall';
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -18,8 +19,7 @@ export function App() {
         {STATUS_LABEL[call.status]}
       </p>
 
-      {/* Placeholder for the voice orb (#9). Keep this slot; the orb canvas replaces its contents. */}
-      <section className="orb-slot" data-testid="orb-slot" data-status={call.status} aria-hidden="true" />
+      <CallOrb room={call.room} status={call.status} />
 
       <div className="call-footer">
         {call.error && (
