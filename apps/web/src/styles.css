@@ -31,6 +31,7 @@ body {
   align-items: center;
   justify-content: space-between;
   min-height: 100dvh;
+  overflow-x: clip;
   padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
 }
 
@@ -59,10 +60,48 @@ body {
 }
 
 .orb-slot {
+  position: relative;
   width: min(64vw, 320px);
   aspect-ratio: 1;
-  border-radius: 50%;
-  border: 1px dashed #2a2f3a;
+}
+
+/* The canvas bleeds past the slot so the halo is not clipped. */
+.orb-canvas {
+  position: absolute;
+  inset: -22%;
+  width: 144%;
+  height: 144%;
+  pointer-events: none;
+}
+
+.orb-preview {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+
+.orb-preview button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.orb-preview button.is-active {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .call-footer {
