@@ -59,8 +59,20 @@ interface Cut {
   readonly reason: CutReason;
 }
 
+function validate(opts: Required<SegmenterOptions>): Required<SegmenterOptions> {
+  const positive = ["firstSegmentMinChars", "firstSegmentMaxChars", "maxSegmentChars", "maxTagChars"] as const;
+  for (const key of positive) {
+    const v = opts[key];
+    if (!Number.isInteger(v) || v < 1) throw new RangeError(`${key} must be a positive integer, got ${v}`);
+  }
+  if (opts.firstSegmentMaxChars < opts.firstSegmentMinChars) {
+    throw new RangeError("firstSegmentMaxChars must be >= firstSegmentMinChars");
+  }
+  return opts;
+}
+
 export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const opts = validate({ ...DEFAULT_OPTIONS, ...options });
   /** Raw input held back because it may be the start of a tag split across tokens. */
   let pending = "";
   /** Tag-free text not yet emitted; always has the single emotion `emotion`. */
