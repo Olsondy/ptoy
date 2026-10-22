@@ -1,0 +1,23 @@
+{
+  "name": "@ptoy/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file-if-exists=.env src/agent.ts dev",
+    "start": "tsx --env-file-if-exists=.env src/agent.ts start",
+    "dev:token": "tsx watch --env-file-if-exists=.env src/token-server.ts",
+    "start:token": "tsx --env-file-if-exists=.env src/token-server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.9.3",
+    "@livekit/rtc-node": "^1.2.1",
+    "livekit-server-sdk": "^2.19.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15"
+  }
+}
