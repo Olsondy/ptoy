@@ -7,6 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev:web": "pnpm --filter @ptoy/web dev",
+    "dev:agent": "pnpm --filter @ptoy/agent dev",
+    "dev:token": "pnpm --filter @ptoy/agent dev:token",
+    "build": "pnpm -r --if-present build",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"
   },
