@@ -12,7 +12,8 @@
     "dev:token": "pnpm --filter @ptoy/agent dev:token",
     "build": "pnpm -r --if-present build",
     "test": "pnpm -r --if-present test",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test:e2e": "pnpm --filter @ptoy/e2e test:e2e"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
