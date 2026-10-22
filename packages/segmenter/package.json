@@ -1,0 +1,14 @@
+{
+  "name": "@ptoy/segmenter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure-logic segmenter: LLM token stream -> synthesizable { text, emotion } segments",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
