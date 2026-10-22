@@ -1,4 +1,4 @@
-import { DEFAULT_EMOTION, type Emotion } from "./emotion.ts";
+import { DEFAULT_EMOTION, parseTag, type Emotion } from "./emotion.ts";
 import { boundaryAt, graphemes, hasContent, isContent, isTrailing, normalize } from "./text.ts";
 
 export interface Segment {
@@ -20,13 +20,28 @@ export interface SegmenterOptions {
    * ender are cut at the last comma inside the window, else hard-cut. Default 40.
    */
   readonly maxSegmentChars?: number;
+  /**
+   * "sentence" (default, per spec): a sentence without its own tag is 平静.
+   * "untilNextTag": a tag's emotion carries over to later untagged sentences.
+   */
+  readonly emotionScope?: "sentence" | "untilNextTag";
+  /**
+   * "[" or "【" not closed by "]" / "】" within this many characters is kept as
+   * literal text; anything closed within it is a tag (dropped if unknown). Default 10.
+   */
+  readonly maxTagChars?: number;
 }
 
 export const DEFAULT_OPTIONS: Required<SegmenterOptions> = {
   firstSegmentMinChars: 2,
   firstSegmentMaxChars: 12,
   maxSegmentChars: 40,
+  emotionScope: "sentence",
+  maxTagChars: 10,
 };
+
+const TAG_OPEN = new Set(["[", "【"]);
+const TAG_CLOSE = new Set(["]", "】"]);
 
 export interface Segmenter {
   /** Feed one LLM token (any chunking). Returns segments that became complete. */
@@ -46,6 +61,9 @@ interface Cut {
 
 export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   const opts = { ...DEFAULT_OPTIONS, ...options };
+  /** Raw input held back because it may be the start of a tag split across tokens. */
+  let pending = "";
+  /** Tag-free text not yet emitted; always has the single emotion `emotion`. */
   let buffer = "";
   let firstDone = false;
   let emotion: Emotion = DEFAULT_EMOTION;
@@ -97,10 +115,56 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
       if (!cut) return;
       emit(gs.slice(0, cut.end).join(""), out);
       buffer = gs.slice(cut.end).join("");
+      if (cut.reason === "sentence" && opts.emotionScope === "sentence") emotion = DEFAULT_EMOTION;
+    }
+  }
+
+  function pushText(text: string, out: Segment[]): void {
+    buffer += text;
+    drain(out);
+  }
+
+  /** A tag starts a new sentence: flush what came before it under the old emotion. */
+  function pushTag(next: Emotion, out: Segment[]): void {
+    emit(buffer, out);
+    buffer = "";
+    emotion = next;
+  }
+
+  /** Split raw input into text and tags; an incomplete "[..." at the end is kept in `pending`. */
+  function consume(raw: string, out: Segment[]): void {
+    let i = 0;
+    while (i < raw.length) {
+      let open = i;
+      while (open < raw.length && !TAG_OPEN.has(raw[open]!)) open++;
+      if (open > i) pushText(raw.slice(i, open), out);
+      if (open === raw.length) return;
+
+      let close = open + 1;
+      let literal = false;
+      for (; close < raw.length; close++) {
+        const c = raw[close]!;
+        if (TAG_CLOSE.has(c)) break;
+        if (TAG_OPEN.has(c) || c === "\n" || close - open > opts.maxTagChars) {
+          literal = true;
+          break;
+        }
+      }
+      if (literal) {
+        pushText(raw[open]!, out);
+        i = open + 1;
+      } else if (close === raw.length) {
+        pending = raw.slice(open);
+        return;
+      } else {
+        pushTag(parseTag(raw.slice(open + 1, close)), out);
+        i = close + 1;
+      }
     }
   }
 
   function clear(): void {
+    pending = "";
     buffer = "";
     firstDone = false;
     emotion = DEFAULT_EMOTION;
@@ -109,8 +173,9 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   return {
     push(token) {
       const out: Segment[] = [];
-      buffer += token;
-      drain(out);
+      const raw = pending + token;
+      pending = "";
+      consume(raw, out);
       return out;
     },
     end() {
