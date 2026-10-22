@@ -9,3 +9,8 @@ __pycache__/
 .DS_Store
 .scratch/
 .worktree/
+
+# Windows deploy (deploy/windows): per-machine config and runtime files
+deploy/windows/config.ps1
+deploy/windows/logs/
+deploy/windows/.run/
