@@ -133,9 +133,11 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 9. 运维注意
 
+部署、启动顺序、健康检查、防火墙与故障排查的操作步骤见 `docs/runbook/windows.md`，脚本在 `deploy/windows/`。
+
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
-- 防火墙需要放行入站端口 7860、7880、8080、8100（ASR）
-- 浏览器麦克风在非 localhost 访问时需要 HTTPS（可用 mkcert 或反向代理）
+- 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860、8080、8100（ASR）
+- 浏览器麦克风在非 localhost 访问时需要 HTTPS：用 Caddy 反向代理（网页与 LiveKit 信令都走 TLS），见 runbook
 
 ## 10. 待定事项
 
