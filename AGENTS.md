@@ -9,12 +9,14 @@
 - `apps/agent`：Voice Agent（LiveKit Agents, Node/TS）
 - `services/`：Windows GPU 主机上的 Python 服务
 - `bench/`：GPU 链路压测
-- `docs/architecture/`：架构文档
+- `docs/architecture/`：架构详情
+- `docs/roadmap/`：功能路线图（当前：`mvp-v1.md`）
+- `docs/decisions/`：ADR，命名 `NNNN-<决策名>.md`（4 位编号 + kebab-case 英文决策名）
 
 ## 开发流程
 - Mac 开发；开发期 Agent 在 Mac 运行，经局域网调用 Windows 服务；上线部署到 Windows。两台机器经 GitHub 同步。
 - 每个需求：`to-spec` → `to-tickets`（端到端可验证的切片）→ 实现（纯逻辑用 `tdd`）→ 压测或真实通话验证
-- 里程碑：M0 回声链路 → M1 ASR/LLM/TTS 跑通 → M2 打断 + 语气词 + 球体状态 → M3 情绪标签 + TTS FastAPI
+- 里程碑与验收标准见 `docs/roadmap/mvp-v1.md`
 - 包管理：pnpm workspace
 
 ## 规则
@@ -33,4 +35,4 @@ Issue 存放在 GitHub Issues（`gh` CLI）。见 `docs/agents/issue-tracker.md`
 
 ### Domain docs
 
-单上下文：根目录一个 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
+单上下文：根目录一个 `CONTEXT.md` + `docs/decisions/`（本仓库的 ADR 目录，不用 `docs/adr/`）。见 `docs/agents/domain.md`。
