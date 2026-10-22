@@ -73,7 +73,7 @@ servers.push(
     name: 'agent',
     command: 'pnpm --filter @ptoy/agent dev',
     cwd: repoRoot,
-    env: { ...livekitEnv, LIVEKIT_AGENT_NAME: '' },
+    env: { ...livekitEnv, LIVEKIT_AGENT_NAME: '', AGENT_PIPELINE: 'echo' },
     // The worker has no fixed HTTP port in dev mode; wait for it to register with LiveKit.
     wait: { stdout: /registered worker/i },
     reuseExistingServer: false,

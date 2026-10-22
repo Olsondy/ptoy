@@ -222,6 +222,8 @@ ASR 冒烟：在 `services\asr` 下 `curl.exe --noproxy '*' -X POST -H "Content-
 
 浏览器只在 HTTPS 或 `localhost` 下允许使用麦克风。
 
+Agent 默认运行字幕链路（`AGENT_PIPELINE=transcribe`，说话后页面出现字幕）。只验证 WebRTC 链路、不依赖任何模型时，在 `apps\agent\.env` 里设 `AGENT_PIPELINE=echo` 再重启 Agent 窗口，下面的“听到自己的声音”针对的就是这个模式；验证完改回 `transcribe`。
+
 - **在 Windows 主机本机**：打开 <http://localhost:4173>，戴耳机，点通话按钮，应能听到自己的声音；挂断后 Agent 窗口出现 `caller left, ending job`，再拨能重新连上。
 - **在 Mac / 手机上**：走第 8 节的 HTTPS（<https://192.168.31.82:5443>）。只想在 Mac Chrome 上临时测一下时，可以在 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` 里加入 `http://192.168.31.82:4173` 后重启 Chrome，再打开该地址（LiveKit 仍是 `ws://`，不冲突）。
 
