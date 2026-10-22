@@ -1,5 +1,6 @@
 import { RoomAudioRenderer, RoomContext } from '@livekit/components-react';
 import { CallOrb } from './orb/CallOrb';
+import { UserSubtitle } from './UserSubtitle';
 import { type CallStatus, useCall } from './useCall';
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -20,6 +21,12 @@ export function App() {
       </p>
 
       <CallOrb room={call.room} status={call.status} />
+
+      {call.room && (
+        <RoomContext.Provider value={call.room}>
+          <UserSubtitle />
+        </RoomContext.Provider>
+      )}
 
       <div className="call-footer">
         {call.error && (

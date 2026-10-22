@@ -1,0 +1,16 @@
+.user-subtitle {
+  width: 100%;
+  max-width: 560px;
+  min-height: 3em;
+  margin: 16px 0 0;
+  font-size: 18px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.user-subtitle.is-error {
+  font-size: 15px;
+  color: var(--warn);
+}
