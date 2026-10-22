@@ -1,0 +1,15 @@
+# HTTPS reverse proxy for LAN devices. Started by start-caddy.ps1, which sets the PTOY_* env vars.
+{
+	# Do not touch the Windows trust store; LAN devices import root.crt manually (see runbook).
+	skip_install_trust
+}
+
+https://{$PTOY_LAN_IP}:{$PTOY_HTTPS_WEB_PORT} {
+	tls internal
+	reverse_proxy 127.0.0.1:{$PTOY_WEB_PORT}
+}
+
+https://{$PTOY_LAN_IP}:{$PTOY_HTTPS_LIVEKIT_PORT} {
+	tls internal
+	reverse_proxy 127.0.0.1:7880
+}
