@@ -8,11 +8,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: true,
+      // Single-user app reached via localhost, the LAN IP or the user's own tunnel hostname.
+      allowedHosts: true,
       port: Number(env.WEB_PORT || 5173),
       proxy: { '/api': { target: tokenServer, changeOrigin: true } },
     },
     preview: {
       host: true,
+      allowedHosts: true,
       proxy: { '/api': { target: tokenServer, changeOrigin: true } },
     },
   };
