@@ -97,6 +97,23 @@ D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5\Start-IndexTTS.ps1
 
 它调用 `D:\Development\IndexTTS\start-local.ps1`，后者直接使用独立环境的 Python。恢复后检查程序、模型、环境、FFmpeg 和 `NLTK_DATA` 的路径；本机 NLTK 数据目录是 `D:\Resources\MyWorkspace\ai\cache\nltk_data`，迁移时一起保留已有数据。
 
+`Start-IndexTTS.ps1` 的入口内容如下：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Write-Host 'IndexTTS code: D:\Development\IndexTTS'
+Write-Host 'Model weights: D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
+Push-Location
+try {
+    & 'D:\Development\IndexTTS\start-local.ps1'
+}
+finally {
+    Pop-Location
+}
+```
+
+`start-local.ps1` 内部需要在代码目录运行 `webui.py`，应使用 `Push-Location -LiteralPath $PSScriptRoot`，并把后续启动逻辑放在 `try { ... } finally { Pop-Location }` 中，避免直接使用 `Set-Location` 后不恢复目录。
+
 参考音频原件为 `F:\ALL\vo-10s.wav`；启动脚本使用的副本是：
 
 ```text
@@ -123,8 +140,21 @@ $env:TTS_MODEL_DIR = 'D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
 $env:TTS_VOICES_DIR    = 'D:\Development\IndexTTS\prompts\voices'
 $env:TTS_DEFAULT_VOICE = 'default-relaxing'
 
-& "$envRoot\python.exe" 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\server.py'
+Write-Host "IndexTTS code: $env:INDEXTTS_DIR"
+Write-Host "Model weights: $env:TTS_MODEL_DIR"
+Write-Host "Voice files:   $env:TTS_VOICES_DIR"
+Push-Location
+try {
+    & "$envRoot\python.exe" 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\server.py'
+}
+finally {
+    Pop-Location
+}
 ```
+
+两个入口脚本都在退出时恢复调用前的 PowerShell 目录，包括正常退出、启动报错和 Ctrl+C 中断（强制关闭整个进程除外）。
+
+启动脚本所在目录不决定模型或代码的位置。`INDEXTTS_DIR` 指向执行推理的程序，`TTS_MODEL_DIR` 指向模型权重；启动模型就是由程序读取权重并执行推理。API 日志中的 `loading IndexTTS2 from ...` 表示代码目录，后面的 `model dir ...` 才表示权重目录。服务为兼容模型代码里的相对路径，会切换 Python 子进程的工作目录，这不会改变外层 PowerShell 的目录。
 
 `voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，当前是 `default-relaxing.wav`（小悠，素材包“治愈放松女声”截到 12.3s）和 `gentle.wav`（知夏）。增删音色后重启服务（ADR 0008）。
 
