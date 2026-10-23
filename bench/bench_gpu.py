@@ -2,7 +2,7 @@
 
 测三件事：
   1. LLM（llama-server）首 token 延迟、生成速度、思考模式是否已关闭
-  2. TTS（IndexTTS Gradio WebUI /gen_single）整句合成耗时、音频时长、实时率
+  2. TTS（IndexTTS Gradio WebUI /gen_single，或 services/tts 的 FastAPI 服务）整句合成耗时、音频时长、实时率
   3. LLM 与 TTS 并发时上述指标的退化程度，以及显存峰值
 
 用法：
@@ -10,6 +10,8 @@
     python bench_gpu.py --llm-url http://127.0.0.1:8080
   LLM + TTS（需要 gradio_client，在 indextts 的 conda 环境里运行）：
     python bench_gpu.py --llm-url http://127.0.0.1:8080 --tts-url http://127.0.0.1:7860 --tts-ref D:\voice\ref.wav
+  LLM + TTS FastAPI 服务（标准库即可；参考音频在服务端配置）：
+    python bench_gpu.py --llm-url http://127.0.0.1:8080 --tts-fastapi-url http://127.0.0.1:8002
 
 /gen_single 只在整句合成完后返回 wav 文件，没有流式输出，所以“首包延迟 = 整句合成耗时”。
 """
@@ -135,6 +137,27 @@ class TtsClient:
         return {"total_ms": total_ms, "audio_ms": audio_ms, "rtf": total_ms / audio_ms}
 
 
+class FastApiTtsClient:
+    """调用 services/tts 的 POST /tts，情感跟随音色参考音频；返回裸 PCM（采样率在 X-Sample-Rate 头里）。"""
+
+    def __init__(self, url):
+        self.url = url.rstrip("/")
+
+    def synth(self, text):
+        req = urllib.request.Request(
+            f"{self.url}/tts",
+            data=json.dumps({"text": text}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        start = time.perf_counter()
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+            rate = int(resp.headers["X-Sample-Rate"])
+        total_ms = (time.perf_counter() - start) * 1000
+        audio_ms = len(data) / 2 / rate * 1000
+        return {"total_ms": total_ms, "audio_ms": audio_ms, "rtf": total_ms / audio_ms}
+
+
 def run_concurrent(llm_url, tts, model=None):
     """LLM 生成的同时发起 TTS，模拟真实流水线。"""
     results = {}
@@ -161,11 +184,17 @@ def main():
     parser.add_argument("--model", default=None, help="llama-server 路由模式下的模型名（见 /v1/models）")
     parser.add_argument("--tts-url", default=None, help="IndexTTS WebUI 地址，如 http://127.0.0.1:7860")
     parser.add_argument("--tts-ref", default=None, help="音色参考音频（本机 wav 路径）")
+    parser.add_argument("--tts-fastapi-url", default=None, help="IndexTTS FastAPI 服务地址（services/tts），如 http://127.0.0.1:8002")
     parser.add_argument("--rounds", type=int, default=3)
     args = parser.parse_args()
     if args.tts_url and not args.tts_ref:
         parser.error("--tts-url 需要同时提供 --tts-ref")
-    tts = TtsClient(args.tts_url, args.tts_ref) if args.tts_url else None
+    if args.tts_url and args.tts_fastapi_url:
+        parser.error("--tts-url 和 --tts-fastapi-url 只能选一个（两者不能同时运行）")
+    if args.tts_fastapi_url:
+        tts = FastApiTtsClient(args.tts_fastapi_url)
+    else:
+        tts = TtsClient(args.tts_url, args.tts_ref) if args.tts_url else None
 
     sampler = GpuSampler()
     sampler.start()
