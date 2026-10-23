@@ -43,6 +43,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 | `TTS_MAX_TEXT_TOKENS_PER_SEGMENT` | `120` | 同 WebUI「分句最大Token数」 |
 | `TTS_LANGUAGE` / `TTS_DURATION_FACTOR` | `ZH` / `1.0` | 仅 v2.5 |
 | `TTS_EMO_ALPHA` | `0.65` | 情感向量强度（请求未带 `emo_alpha` 时用；与 WebUI 默认 `emo_weight` 相同） |
+| `TTS_TIGHTEN_PAUSES` | `1` | 收紧每次返回音频的静音：首部最多留 `TTS_LEAD_SILENCE_MS`（30）、尾部最多留 `TTS_TRAIL_SILENCE_MS`（250），句中超过 `TTS_MAX_PAUSE_MS`（400）的停顿压到这个长度。Agent 逐段拼接播放，不收紧时段间停顿常到 600–1000ms（参考音频 200–420ms），听起来语速偏慢。`0` 关闭 |
 | `TTS_OUTPUT_MODE` | `auto` | `auto`：预热时试 `infer(output_path=None)`，能拿到 `(采样率, 数组)` 就在内存里返回，否则写临时 wav；`memory` / `file` 强制 |
 | `TTS_ABORT_RUNNING` | `1` | 取消时在下一个阶段边界中止进行中的合成（见“取消”） |
 | `TTS_HOST` / `TTS_PORT` | `0.0.0.0` / `8002` | 监听地址 |

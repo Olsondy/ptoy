@@ -25,6 +25,7 @@ def main() -> None:
     import uvicorn
 
     from app import create_app
+    from pauses import PauseLimits
     from engine import EngineConfig, IndexTtsEngine
 
     try:
@@ -44,6 +45,11 @@ def main() -> None:
         default_emo_alpha=float(os.environ.get("TTS_EMO_ALPHA", "0.65")),
         max_text_chars=int(os.environ.get("TTS_MAX_TEXT_CHARS", "300")),
         max_queue=int(os.environ.get("TTS_MAX_QUEUE", "8")),
+        pauses=None if os.environ.get("TTS_TIGHTEN_PAUSES", "1").lower() in ("0", "false") else PauseLimits(
+            lead_ms=int(os.environ.get("TTS_LEAD_SILENCE_MS", "30")),
+            trail_ms=int(os.environ.get("TTS_TRAIL_SILENCE_MS", "250")),
+            max_pause_ms=int(os.environ.get("TTS_MAX_PAUSE_MS", "400")),
+        ),
     )
     log.info("serving on http://%s:%d", host, port)
     uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -120,6 +120,15 @@ class HttpTest(unittest.TestCase):
             [([1, 0, 0, 0, 0, 0, 0, 0], 0.5), (None, 0.5), ([0, 0, 0.8, 0, 0, 0, 0, 0], 1.0)],
         )
 
+    def test_pause_limits_tighten_the_returned_audio(self):
+        from pauses import PauseLimits
+
+        res = self.client(FakeEngine(), pauses=PauseLimits(lead_ms=0, trail_ms=0, max_pause_ms=400)).post(
+            "/tts", json={"text": "你好呀。"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(np.frombuffer(res.content, dtype="<i2")), RATE // 100 * 4)  # ramp has no silence
+
     def test_generation_overrides_reach_the_engine(self):
         engine = FakeEngine()
         c = self.client(engine)
