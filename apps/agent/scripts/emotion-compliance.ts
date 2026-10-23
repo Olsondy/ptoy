@@ -28,7 +28,7 @@ const { values } = parseArgs({
 const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace(/\/+$/, '');
 const model = process.env.LLM_MODEL ?? 'qwen3-8b';
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
-const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 150);
+const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 220);
 const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
 const system = catalog.defaultCharacter.instructions;
 const out = (line: string) => process.stdout.write(`${line}\n`);

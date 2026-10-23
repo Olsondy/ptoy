@@ -264,7 +264,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 12. 对话链路与每轮耗时日志（M1 #10）
 
-**链路**（`AGENT_PIPELINE=conversation`，默认；`apps/agent/src/pipelines/conversation.ts`）：§11 的 VAD + STT → LLM（`@livekit/agents-plugin-openai`，`baseURL` 指向 llama-server，`max_completion_tokens=150`）→ TTS 插件 `IndexTTS`（`apps/agent/src/tts/`）→ Agent 音轨（24kHz）。角色 system prompt 在 `apps/agent/prompts/characters/`：每个角色一个 `<id>.md`（人设）+ 共用的 `_rules.md`（通话规则和情绪标签），改文件即可，不用改代码，下一通电话生效。页面拨号前选角色（`GET /api/characters` 列出），经 `POST /api/token` 写进来电者属性 `ptoy.character`，Agent 入房时读取（ADR 0007）。
+**链路**（`AGENT_PIPELINE=conversation`，默认；`apps/agent/src/pipelines/conversation.ts`）：§11 的 VAD + STT → LLM（`@livekit/agents-plugin-openai`，`baseURL` 指向 llama-server，`max_completion_tokens=220`）→ TTS 插件 `IndexTTS`（`apps/agent/src/tts/`）→ Agent 音轨（24kHz）。角色 system prompt 在 `apps/agent/prompts/characters/`：每个角色一个 `<id>.md`（人设）+ 共用的 `_rules.md`（通话规则和情绪标签），改文件即可，不用改代码，下一通电话生效。页面拨号前选角色（`GET /api/characters` 列出），经 `POST /api/token` 写进来电者属性 `ptoy.character`，Agent 入房时读取（ADR 0007）。
 
 - **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。`fastapi` 见 §8 阶段 2；`gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。返回的 22.05kHz wav 解码后重采样到音轨采样率。
 - **分段**：插件的 `stream()` 把 LLM 文本流交给 `@ptoy/segmenter`（§8 规则，默认阈值：首段在第一个逗号处切），每段一个 `synthesizeSegment({ text, emotion })` 请求；请求在插件内串行（GPU 共享），不重试。Segmenter 是切分和情绪标签解析的唯一实现。

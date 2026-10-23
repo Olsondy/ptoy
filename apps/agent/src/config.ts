@@ -120,7 +120,7 @@ const conversationSchema = charactersSchema.extend({
   LLM_MODEL: z.string().min(1).default('qwen3-8b'),
   // llama-server ignores the key; the OpenAI client just needs a non-empty one.
   LLM_API_KEY: z.string().min(1).default('no-key'),
-  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(150),
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(220),
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
