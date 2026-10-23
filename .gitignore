@@ -14,3 +14,6 @@ __pycache__/
 /deploy/windows/config.ps1
 /deploy/windows/.run/
 /deploy/windows/logs/
+
+# bench outputs (compare_ref_audio.py)
+bench/out/
