@@ -1,22 +1,15 @@
-import {
-  type APIConnectOptions,
-  DEFAULT_API_CONNECT_OPTIONS,
-  log,
-  shortuuid,
-  tokenize,
-  tts,
-} from '@livekit/agents';
+import { type APIConnectOptions, DEFAULT_API_CONNECT_OPTIONS, log, shortuuid, tts } from '@livekit/agents';
 import { AudioFrame, AudioResampler, AudioResamplerQuality } from '@livekit/rtc-node';
-import { DEFAULT_EMOTION } from '@ptoy/segmenter';
+import { DEFAULT_EMOTION, type SegmenterOptions } from '@ptoy/segmenter';
 import type { PcmAudio, TtsBackend, TtsSegment } from './backend.js';
-import { ZhSentenceTokenizer } from './sentences.js';
+import { SegmentedSynthesizeStream } from './segment-stream.js';
 
 export interface IndexTTSOptions {
   readonly backend: TtsBackend;
   /** Output sample rate (the agent's audio track rate); backend audio is resampled to it. */
   readonly sampleRate: number;
-  /** Sentence splitting for `stream()`; defaults to {@link ZhSentenceTokenizer}. */
-  readonly sentenceTokenizer?: tokenize.SentenceTokenizer;
+  /** Segmentation of `stream()` input; defaults to the `@ptoy/segmenter` defaults (short first segment). */
+  readonly segmenter?: SegmenterOptions;
 }
 
 /** Interleaved s16 → mono by averaging channels. */
@@ -66,18 +59,18 @@ export function toFrames(audio: PcmAudio, sampleRate: number): AudioFrame[] {
  * LiveKit TTS plugin for IndexTTS2: "text + emotion → audio" over a swappable {@link TtsBackend}.
  *
  * - `synthesize(text)` speaks with the default emotion; `synthesizeSegment({ text, emotion })`
- *   is the emotion-aware entry point for #11/#13 (a custom `ttsNode` feeding segmenter output).
- * - `stream()` splits the LLM text into sentences ({@link ZhSentenceTokenizer}) and synthesizes
- *   each one; the framework's StreamAdapter attaches sentence-level timed transcripts, which
- *   drive the subtitle sync.
- * - Requests are serialized (the GPU is shared with the LLM): the adapter asks for the next
- *   sentence while the previous one is still synthesizing, but the backend sees one at a time.
+ *   is the emotion-aware entry point.
+ * - `stream()` runs the LLM text through `@ptoy/segmenter` ({@link SegmentedSynthesizeStream}):
+ *   short first segment, `[情绪]` tags parsed and removed, one `synthesizeSegment` per segment
+ *   with segment-level timed transcripts, which drive the subtitle sync.
+ * - Requests are serialized (the GPU is shared with the LLM): the stream asks for the next
+ *   segment while the previous one is still synthesizing, but the backend sees one at a time.
  * - Cancellation (interruption, session close) aborts the backend request and drops its audio.
  */
 export class IndexTTS extends tts.TTS {
   label = 'ptoy.IndexTTS';
   readonly #backend: TtsBackend;
-  readonly #tokenizer: tokenize.SentenceTokenizer;
+  readonly #segmenter: SegmenterOptions | undefined;
   readonly #logger = log().child({ tts: 'indextts' });
   /** Tail of the serialization chain. */
   #lock: Promise<void> = Promise.resolve();
@@ -85,7 +78,7 @@ export class IndexTTS extends tts.TTS {
   constructor(opts: IndexTTSOptions) {
     super(opts.sampleRate, 1, { streaming: true, alignedTranscript: true });
     this.#backend = opts.backend;
-    this.#tokenizer = opts.sentenceTokenizer ?? new ZhSentenceTokenizer();
+    this.#segmenter = opts.segmenter;
   }
 
   override get model(): string {
@@ -115,7 +108,7 @@ export class IndexTTS extends tts.TTS {
   }
 
   stream(options?: { connOptions?: APIConnectOptions }): tts.SynthesizeStream {
-    return new tts.StreamAdapterWrapper(this, this.#tokenizer, options?.connOptions);
+    return new SegmentedSynthesizeStream(this, this.#segmenter, options?.connOptions);
   }
 
   /**

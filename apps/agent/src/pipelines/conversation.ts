@@ -1,11 +1,9 @@
 import {
   APITimeoutError,
-  type ChatChunk,
   type ChatContext,
   type ChatMessage,
   type ModelSettings,
   type TimedString,
-  type ToolContext,
   createTimedString,
   isTimedString,
   log,
@@ -14,9 +12,16 @@ import {
 import { readFileSync } from 'node:fs';
 import { type ConversationConfig, loadConversationConfig } from '../config.js';
 import { createLlm } from '../llm/index.js';
+import { type Filler, type FillerBank, fillerAudio, loadFillerBank } from '../fillers/bank.js';
+import { FillerTurnGuard } from '../fillers/turn.js';
 import { IndexTTS, TtsError, createTtsBackend } from '../tts/index.js';
-import { attributePublisher, createStt, createTurnTaking, publishSttErrors } from './listening.js';
-import { TagStripper } from './tag-guard.js';
+import {
+  INTERRUPTION_MIN_SPEECH_MS,
+  attributePublisher,
+  createStt,
+  createTurnTaking,
+  publishSttErrors,
+} from './listening.js';
 import { TurnTimingTracker } from './turn-timing.js';
 import type { CallPipeline } from './types.js';
 
@@ -34,29 +39,6 @@ function llmErrorMessage(error: unknown): string {
 function ttsErrorMessage(error: unknown): string {
   if (error instanceof TtsError && error.kind === 'timeout') return 'AI 的语音合成超时，这句话没能说出来。';
   return 'AI 的语音合成服务不可用，这句话没能说出来。';
-}
-
-/** Strips stray `[...]` tags from the LLM stream so they are neither spoken nor shown. */
-function stripTags(): TransformStream<ChatChunk | string, ChatChunk | string> {
-  const stripper = new TagStripper();
-  return new TransformStream({
-    transform(chunk, controller) {
-      if (typeof chunk === 'string') {
-        const text = stripper.push(chunk);
-        if (text) controller.enqueue(text);
-        return;
-      }
-      const content = chunk.delta?.content;
-      if (!content || !chunk.delta) {
-        controller.enqueue(chunk);
-        return;
-      }
-      controller.enqueue({ ...chunk, delta: { ...chunk.delta, content: stripper.push(content) } });
-    },
-    flush() {
-      stripper.end();
-    },
-  });
 }
 
 /**
@@ -87,11 +69,41 @@ function stripWordBreaks(message: ChatMessage): void {
   message.content = message.content.map((c) => (typeof c === 'string' ? c.replaceAll(WORD_BREAK, '') : c));
 }
 
-/** The character: fixed system prompt, tag guard on the LLM output, CJK-paced transcript. */
+interface FillerHooks {
+  readonly bank: FillerBank;
+  /** SenseVoice emotion of the turn's last utterance. */
+  readonly asrEmotion: () => string | undefined;
+  readonly onPlay: (filler: Filler, handle: voice.SpeechHandle) => void;
+}
+
+/**
+ * The character: fixed system prompt, CJK-paced transcript, and a filler at the end of each user turn.
+ *
+ * The reply text itself is cut and cleaned (tags removed) by `@ptoy/segmenter` inside the TTS
+ * plugin's `stream()`; subtitles and the committed history come from its per-segment transcripts.
+ */
 class CharacterAgent extends voice.Agent {
-  override async llmNode(chatCtx: ChatContext, toolCtx: ToolContext, modelSettings: ModelSettings) {
-    const stream = await voice.Agent.default.llmNode(this, chatCtx, toolCtx, modelSettings);
-    return stream ? stream.pipeThrough(stripTags()) : null;
+  readonly #fillers: FillerHooks | undefined;
+
+  constructor(options: voice.AgentOptions<unknown>, fillers?: FillerHooks) {
+    super(options);
+    this.#fillers = fillers;
+  }
+
+  /**
+   * Runs right before the reply is generated: queue a filler ahead of it. The reply's LLM and TTS
+   * start immediately anyway; its playout waits in the speech queue until the filler has played
+   * (no overlap), and if the filler is shorter the caller just hears silence until the reply.
+   * The filler is a normal interruptible speech: user speech pauses/stops it like any reply.
+   * It is not added to the chat history (`addToChatCtx: false`) and has no subtitle (empty text).
+   */
+  override async onUserTurnCompleted(_chatCtx: ChatContext, newMessage: ChatMessage): Promise<void> {
+    const hooks = this.#fillers;
+    if (!hooks) return;
+    const filler = hooks.bank.next(newMessage.textContent ?? '', hooks.asrEmotion());
+    if (!filler) return;
+    const handle = this.session.say('', { audio: fillerAudio(filler), addToChatCtx: false, allowInterruptions: true });
+    hooks.onPlay(filler, handle);
   }
 
   override async transcriptionNode(
@@ -110,7 +122,8 @@ function loadCharacterPrompt(config: ConversationConfig): string {
 }
 
 /**
- * M1 full conversation: VAD + SenseVoice STT → llama-server LLM → IndexTTS → agent audio track.
+ * Full conversation: VAD + SenseVoice STT → llama-server LLM → segmenter + IndexTTS → agent audio
+ * track, with a pre-recorded filler played as soon as each user turn ends (M2 #11).
  * User transcripts and agent replies go out on `lk.transcription`; LiveKit's transcription sync
  * paces the agent text with playback (sentence timestamps from the TTS, per-character advance via
  * {@link addWordBreaks}). One `turn timing` log line per turn (docs/architecture/server.md §12).
@@ -121,11 +134,28 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   const { vad, turnHandling } = createTurnTaking(config);
 
   const timing = new TurnTimingTracker((turn) => logger.info({ turn }, 'turn timing'));
+  let asrEmotion: string | undefined;
   const stt = createStt(config, (t) => {
+    asrEmotion = t.emotion;
     timing.onAsrResult(t.inferenceMs);
     logger.debug({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
   });
   const tts = new IndexTTS({ backend: createTtsBackend(config.tts), sampleRate: config.audioSampleRate });
+  const fillerBank = config.fillers ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate) : undefined;
+  const fillerGuard = new FillerTurnGuard({
+    minSpeechMs: INTERRUPTION_MIN_SPEECH_MS,
+    onFillerStart: (at) => timing.onFillerStart(at),
+    onReplyDropped: (id) => logger.info({ speechId: id }, 'caller spoke over the filler, queued reply dropped'),
+  });
+  const fillerHooks: FillerHooks | undefined = fillerBank && {
+    bank: fillerBank,
+    asrEmotion: () => asrEmotion,
+    onPlay: (f, handle) => {
+      fillerGuard.fillerQueued(handle);
+      timing.onFiller(f.id, f.durationMs);
+      logger.debug({ filler: f.id, group: f.group, text: f.text, durationMs: f.durationMs }, 'filler queued');
+    },
+  };
 
   const session = new voice.AgentSession({
     vad,
@@ -158,33 +188,49 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     timing.onError(type);
     setAgentError(message);
   });
-  session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => timing.onMetrics(ev.metrics));
+  session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
+    if (ev.metrics.type === 'eou_metrics' && ev.metrics.speechId) fillerGuard.turnCommitted(ev.metrics.speechId);
+    timing.onMetrics(ev.metrics);
+  });
   session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
     if (ev.isFinal && ev.transcript) timing.onUserTranscript(ev.transcript);
   });
+  session.on(voice.AgentSessionEventTypes.UserStateChanged, (ev) => fillerGuard.userState(ev.newState));
+  session.on(voice.AgentSessionEventTypes.SpeechCreated, (ev) => {
+    if (ev.source === 'generate_reply') fillerGuard.replyCreated(ev.speechHandle);
+  });
   session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
-    timing.onAgentState(ev.newState, ev.createdAt);
+    if (!fillerGuard.agentState(ev.newState, ev.createdAt)) timing.onAgentState(ev.newState, ev.createdAt);
     if (ev.newState === 'speaking') setAgentError('');
   });
   session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
     const item = ev.item;
     if (item.type !== 'message' || item.role !== 'assistant') return;
     stripWordBreaks(item);
-    timing.onAgentReply(item.textContent ?? '', item.interrupted);
+    const startedAt = item.metrics?.startedSpeakingAt;
+    timing.onAgentReply(item.textContent ?? '', item.interrupted, startedAt === undefined ? undefined : startedAt * 1000);
   });
   session.on(voice.AgentSessionEventTypes.Close, (ev) => {
     timing.close();
+    fillerGuard.close();
     logger.info({ reason: ev.reason }, 'agent session closed');
   });
 
   await session.start({
-    agent: new CharacterAgent({ instructions: loadCharacterPrompt(config) }),
+    agent: new CharacterAgent({ instructions: loadCharacterPrompt(config) }, fillerHooks),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
     outputOptions: { audioSampleRate: config.audioSampleRate },
   });
   logger.info(
-    { asr: config.asrUrl, llm: config.llm.baseUrl, model: config.llm.model, tts: tts.provider, ttsUrl: config.tts.url },
+    {
+      asr: config.asrUrl,
+      llm: config.llm.baseUrl,
+      model: config.llm.model,
+      tts: tts.provider,
+      ttsUrl: config.tts.url,
+      fillers: fillerBank?.fillers.length ?? 0,
+    },
     'conversation ready',
   );
 
