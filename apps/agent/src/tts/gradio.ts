@@ -1,5 +1,5 @@
 import { log } from '@livekit/agents';
-import { emotionVector } from '@ptoy/segmenter';
+import { DEFAULT_EMOTION, emotionVector } from '@ptoy/segmenter';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { type PcmAudio, type TtsBackend, TtsError, type TtsSegment } from './backend.js';
@@ -11,8 +11,17 @@ export interface IndexTtsGradioOptions {
   /** Local path of the speaker reference wav. Uploaded once, then referenced by its server path. */
   readonly refAudioPath: string;
   readonly language: 'ZH' | 'EN' | 'JA' | 'AR' | 'ES';
-  /** `reference`: emotion follows the speaker reference (segment emotion ignored); `vector`: one-hot emotion vector. */
+  /**
+   * `reference`: emotion follows the speaker reference (segment emotion ignored).
+   * `vector`: the segment emotion is sent as a one-hot emotion vector; 平静 segments use the
+   * reference mode instead, so calm speech is the reference voice itself.
+   */
   readonly emotionControl: 'reference' | 'vector';
+  /**
+   * WebUI `emo_weight` in vector mode: strength of the emotion vector (0–1; the WebUI scales the
+   * vector by it). `undefined` keeps the WebUI default (0.65).
+   */
+  readonly emotionWeight?: number;
   /** Whole-request timeout (queue + synthesis + download). */
   readonly timeoutMs: number;
   /** Injected for tests; defaults to the global `fetch`. */
@@ -111,17 +120,19 @@ export class IndexTtsGradioBackend implements TtsBackend {
   }
 
   #buildData(params: readonly ApiParameter[], ref: string, segment: TtsSegment): unknown[] {
+    const vector = this.#opts.emotionControl === 'vector' && segment.emotion !== DEFAULT_EMOTION;
     const overrides: Record<string, unknown> = {
-      emo_control_method: this.#opts.emotionControl === 'vector' ? EMO_VECTOR : EMO_SAME_AS_REFERENCE,
+      emo_control_method: vector ? EMO_VECTOR : EMO_SAME_AS_REFERENCE,
       prompt: gradioFile(ref),
       text: segment.text,
       lang_choice: this.#opts.language,
       emo_ref_path: null,
     };
-    if (this.#opts.emotionControl === 'vector') {
+    if (vector) {
       emotionVector(segment.emotion).forEach((v, i) => {
         overrides[`vec${i + 1}`] = v;
       });
+      if (this.#opts.emotionWeight !== undefined) overrides.emo_weight = this.#opts.emotionWeight;
     }
     return params.map((p) =>
       p.parameter_name in overrides

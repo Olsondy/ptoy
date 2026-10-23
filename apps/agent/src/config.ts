@@ -103,7 +103,8 @@ const conversationSchema = z.object({
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_REF_AUDIO: z.string().min(1).optional(),
   TTS_LANGUAGE: z.enum(['ZH', 'EN', 'JA', 'AR', 'ES']).default('ZH'),
-  TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('reference'),
+  TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('vector'),
+  TTS_EMO_WEIGHT: z.coerce.number().min(0).max(1).default(0.8),
   TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   AGENT_AUDIO_SAMPLE_RATE: z.coerce.number().int().positive().default(24000),
   FILLERS_ENABLED: z
@@ -129,8 +130,13 @@ export interface GradioTtsConfig {
   /** Local path of the speaker reference wav; uploaded once per process. */
   readonly refAudioPath: string;
   readonly language: 'ZH' | 'EN' | 'JA' | 'AR' | 'ES';
-  /** `reference`: emotion follows the speaker reference audio; `vector`: the segment emotion drives IndexTTS2's emotion vector. */
+  /**
+   * `vector` (default): the segment emotion drives IndexTTS2's emotion vector (平静 uses the reference);
+   * `reference`: emotion always follows the speaker reference audio.
+   */
   readonly emotionControl: 'reference' | 'vector';
+  /** WebUI `emo_weight` for vector mode (emotion strength, 0–1). */
+  readonly emotionWeight: number;
   readonly timeoutMs: number;
 }
 
@@ -172,6 +178,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       refAudioPath: e.TTS_REF_AUDIO as string,
       language: e.TTS_LANGUAGE,
       emotionControl: e.TTS_EMOTION_CONTROL,
+      emotionWeight: e.TTS_EMO_WEIGHT,
       timeoutMs: e.TTS_TIMEOUT_MS,
     },
     characterPromptFile: e.CHARACTER_PROMPT_FILE,

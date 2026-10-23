@@ -75,12 +75,25 @@ describe('IndexTTS Gradio backend request', () => {
     expect(gradio.calls).toHaveLength(2);
   });
 
-  it('in vector mode sends the segment emotion as the one-hot emotion vector', async () => {
-    const { gradio, backend } = await setup({}, { emotionControl: 'vector' });
+  it('in vector mode sends the segment emotion as the one-hot emotion vector with emo_weight', async () => {
+    const { gradio, backend } = await setup({}, { emotionControl: 'vector', emotionWeight: 0.8 });
     await backend.synthesize({ text: '太好了！', emotion: '喜' }, new AbortController().signal);
+    await backend.synthesize({ text: '对不起。', emotion: '哀' }, new AbortController().signal);
+    const vec = (call: Record<string, unknown>) => [1, 2, 3, 4, 5, 6, 7, 8].map((i) => call[`vec${i}`]);
+    const [happy, sad] = gradio.calls;
+    expect(happy!.emo_control_method).toBe('使用情感向量控制');
+    expect(vec(happy!)).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(happy!.emo_weight).toBe(0.8);
+    expect(vec(sad!)).toEqual([0, 0, 1, 0, 0, 0, 0, 0]);
+  });
+
+  it('in vector mode speaks 平静 with the reference audio (no vector)', async () => {
+    const { gradio, backend } = await setup({}, { emotionControl: 'vector', emotionWeight: 0.8 });
+    await backend.synthesize({ text: '好的。', emotion: '平静' }, new AbortController().signal);
     const call = gradio.calls[0]!;
-    expect(call.emo_control_method).toBe('使用情感向量控制');
-    expect([1, 2, 3, 4, 5, 6, 7, 8].map((i) => call[`vec${i}`])).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(call.emo_control_method).toBe('与音色参考音频相同');
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map((i) => call[`vec${i}`])).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(call.emo_weight).toBe(0.65);
   });
 });
 

@@ -14,6 +14,7 @@ export function createTtsBackend(config: TtsConfig): TtsBackend {
         refAudioPath: config.refAudioPath,
         language: config.language,
         emotionControl: config.emotionControl,
+        emotionWeight: config.emotionWeight,
         timeoutMs: config.timeoutMs,
       });
   }

@@ -170,7 +170,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 **结论**：默认用 `vad` + 550ms。600ms 以内的句中停顿不会切句；延迟符合 §7 的 500ms 端点预算。`eot` 在合成语音上会把大量完整句子判成“没说完”，直接把延迟拉高到 3s，换来的只是偶尔合并 1s 以上的停顿。合成语音的语调不够自然，结论需要真人麦克风复核：试 `TURN_DETECTOR=eot`，看 `eot prediction` 日志里的 `endOfTurnProbability`。
 
-**情绪/事件给 #13**：每条 FINAL_TRANSCRIPT 的 `alternatives[0].metadata` 带 `{ emotion, events, inferenceMs, audioMs }`，用 `asrMetadataOf(ev)` 读取；或者给 `SenseVoiceSTT` 传 `onTranscript`，每识别一句回调一次（当前用于日志）。#13 可以记下本轮各句的情绪，在 `Agent.onUserTurnCompleted(chatCtx, newMessage)` 里给 `newMessage` 加 `[用户语气:X]` 前缀。字幕走 STT 原文，不受影响。
+**情绪/事件**：每条 FINAL_TRANSCRIPT 的 `alternatives[0].metadata` 带 `{ emotion, events, inferenceMs, audioMs }`，用 `asrMetadataOf(ev)` 读取；`SenseVoiceSTT` 的 `onTranscript` 每识别一句回调一次。#13 用它记下每句的情绪，作为 `[用户语气:X]` 交给 LLM（见 §12“情绪链路”和 `docs/architecture/emotion-pipeline.md`）。字幕走 STT 原文，不受影响。
 
 **ASR 故障**：超时、连不上、4xx/5xx、返回格式错误都会抛 `AsrError`（`kind` 取 `timeout` / `unreachable` / `service` / `bad_response`），记 error 日志，同时作为可恢复的 `stt_error` 发出，会话不会关闭。Pipeline 把面向用户的提示写到 Agent 的参与者属性 `ptoy.stt_error`，字幕位置显示；下一句识别成功后清空。
 
@@ -182,7 +182,8 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - **分段**：插件的 `stream()` 把 LLM 文本流交给 `@ptoy/segmenter`（§8 规则，默认阈值：首段在第一个逗号处切），每段一个 `synthesizeSegment({ text, emotion })` 请求；请求在插件内串行（GPU 共享），不重试。Segmenter 是切分和情绪标签解析的唯一实现。
 - **取消**：打断或会话结束时中止请求、丢弃结果。Gradio 的 `/call` 接口不能取消已排队的任务，被取消的句子仍会在 GPU 上跑完。
 - **字幕**：用框架内置的播放同步（TTS 对齐的段级时间戳：每段的干净文本挂在该段第一帧上 + 按字速推进），字幕和写入历史的回复都来自这些段文本。框架按空白切词，中文整句会被当成一个词一次性放出，所以 `transcriptionNode` 在每个中日文字符后插入 U+FEFF（会被当作空白、但不显示），字幕就能逐字跟随播放；写入对话历史前会去掉，网页显示前也会去掉。
-- **标签**：LLM 输出里的 `[...]` / `【...】` 由 Segmenter 解析（合法情绪传给 TTS，非法丢弃），不进 TTS 文本、字幕和对话历史。LLM 看到的历史里没有标签；#13 若要模型持续输出标签，靠 system prompt 约束。
+- **标签**：LLM 输出里的 `[...]` / `【...】` 由 Segmenter 解析（合法情绪传给 TTS，非法丢弃），不进 TTS 文本、字幕和对话历史。LLM 看到的历史里没有标签，模型持续输出标签靠 system prompt 约束。
+- **情绪链路**（#13，细节和实测见 `docs/architecture/emotion-pipeline.md`）：`CharacterAgent.llmNode` 只在发给 LLM 的那份上下文里给正在回答的用户消息加 `[用户语气:X]`（`apps/agent/src/emotion/user-tone.ts`，平静不加），历史、字幕和框架的抢先生成都用原文；TTS 默认 `TTS_EMOTION_CONTROL=vector`，非平静句子发 one-hot 情绪向量（`TTS_EMO_WEIGHT=0.8`），平静句子用参考音频。
 - **语气词**（#11，`apps/agent/src/fillers/`）：`FILLERS_ENABLED`（默认开）、`FILLERS_MANIFEST`（默认仓库的 `assets/fillers/manifest.json`）。每个进程加载一次并重采样到音轨采样率。用户一轮结束（`onUserTurnCompleted`，即 EOU 时刻）就用 `session.say('', { audio, addToChatCtx: false })` 排一条语气词在正式回复之前；回复的 LLM/TTS 同时开始，播放在框架的 speech 队列里排在语气词之后，所以不会重叠：回复先好就等语气词放完，语气词先放完就静音等回复。
   - 选组（`chooseFillerGroup`，按用户最终文本 + SenseVoice 情绪）：负面情绪（sad/angry/fearful/disgusted）或倾诉词（累、难过、烦、唉…）→ `empathy`；请求（帮我、能不能、…好不好）→ `ack`；提问（？、句末吗/呢、什么/怎么/为什么…）→ `thinking`；其余 → `ack`。组内随机，绝不与上一轮同一条（组内只剩上一条时换 `ack` 或任意一条）。
   - 不进对话历史、不出字幕（文本为空）：LLM 不知道自己说过“好的，”，偶尔会在回复开头重复一次类似的话。
