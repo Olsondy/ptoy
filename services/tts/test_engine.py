@@ -182,6 +182,44 @@ class EngineTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.engine(TTS_REF_AUDIO=os.path.join(self.dir, "nope.wav"))
 
+    def voices_dir(self, *names):
+        d = os.path.join(self.dir, "voices")
+        os.makedirs(d, exist_ok=True)
+        for name in names:
+            with open(self.ref, "rb") as src, open(os.path.join(d, name), "wb") as dst:
+                dst.write(src.read())
+        return d
+
+    def test_voices_dir_ids_and_default(self):
+        d = self.voices_dir("chunqing.wav", "wenrou.wav", "notes.txt")
+        env = {"INDEXTTS_DIR": self.dir, "TTS_VOICES_DIR": d}
+        with self.assertRaisesRegex(ValueError, "TTS_DEFAULT_VOICE"):
+            EngineConfig.from_env(env)  # two voices, no default
+        cfg = EngineConfig.from_env({**env, "TTS_DEFAULT_VOICE": "wenrou"})
+        self.assertEqual(sorted(cfg.voices), ["chunqing", "wenrou"])
+        self.assertEqual(cfg.default_voice, "wenrou")
+        with self.assertRaisesRegex(ValueError, "not found"):
+            EngineConfig.from_env({**env, "TTS_DEFAULT_VOICE": "nope"})
+        # TTS_REF_AUDIO joins the voices and is the default unless TTS_DEFAULT_VOICE says otherwise.
+        cfg = EngineConfig.from_env({**env, "TTS_REF_AUDIO": self.ref})
+        self.assertEqual((sorted(cfg.voices), cfg.default_voice), (["chunqing", "ref", "wenrou"], "ref"))
+        # A single voice is the default.
+        os.remove(os.path.join(d, "wenrou.wav"))
+        self.assertEqual(EngineConfig.from_env(env).default_voice, "chunqing")
+
+    def test_synthesize_picks_the_voice_reference(self):
+        d = self.voices_dir("wenrou.wav")
+        e = self.engine(TTS_VOICES_DIR=d)
+        model = FakeIndexTTS2.instances[0]
+        self.assertEqual((e.voices, e.default_voice, e.loaded_voice), (["ref", "wenrou"], "ref", "ref"))
+        e.synthesize("你好。", None, 1.0, lambda: False, voice="wenrou")
+        self.assertEqual(model.calls[-1]["spk_audio_prompt"], os.path.join(d, "wenrou.wav"))
+        self.assertEqual(e.loaded_voice, "wenrou")
+        e.synthesize("你好。", None, 1.0, lambda: False)
+        self.assertEqual(model.calls[-1]["spk_audio_prompt"], self.ref)
+        with self.assertRaisesRegex(ValueError, "unknown voice"):
+            e.synthesize("你好。", None, 1.0, lambda: False, voice="nope")
+
 
 class HelperTest(unittest.TestCase):
     def test_filter_kwargs(self):

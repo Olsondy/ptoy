@@ -2,7 +2,8 @@
 
 Run inside the IndexTTS conda env, with the WebUI stopped (two model copies do not fit in VRAM):
   set INDEXTTS_DIR=D:\\index-tts
-  set TTS_REF_AUDIO=D:\\voice\\ref.wav
+  set TTS_VOICES_DIR=D:\\voices        (one <voice>.wav per voice; or TTS_REF_AUDIO for a single one)
+  set TTS_DEFAULT_VOICE=chunqing
   python services\\tts\\server.py
 All settings are environment variables, see README.md.
 """
@@ -33,7 +34,10 @@ def main() -> None:
         sys.exit(2)
     host = os.environ.get("TTS_HOST", "0.0.0.0")
     port = int(os.environ.get("TTS_PORT", "8002"))
-    log.info("loading IndexTTS2 from %s (model dir %s, ref %s)", cfg.indextts_dir, cfg.model_dir, cfg.ref_audio)
+    log.info(
+        "loading IndexTTS2 from %s (model dir %s, voices %s, default %s)",
+        cfg.indextts_dir, cfg.model_dir, sorted(cfg.voices), cfg.default_voice,
+    )
     engine = IndexTtsEngine(cfg)
     app = create_app(
         engine,

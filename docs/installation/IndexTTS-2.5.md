@@ -103,7 +103,7 @@ D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5\Start-IndexTTS.ps1
 D:\Development\IndexTTS\prompts\vo-10s.wav
 ```
 
-保持音频文件可读。用 WebUI 时，ptoy Agent 还要在 `.env` 设置自己的 `TTS_REF_AUDIO`；用下面的 API 服务时由服务端读取，Agent 不需要。
+保持音频文件可读。用 WebUI 时，ptoy Agent 还要在 `.env` 设置自己的 `TTS_REF_AUDIO`（所有角色共用这一个音色）；用下面的 API 服务时音色由服务端的音色目录提供，Agent 只按角色传音色 id。
 
 ## ptoy 使用的 API 服务
 
@@ -120,10 +120,13 @@ $env:NO_PROXY = 'localhost,127.0.0.1'
 
 $env:INDEXTTS_DIR  = 'D:\Development\IndexTTS'
 $env:TTS_MODEL_DIR = 'D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
-$env:TTS_REF_AUDIO = 'D:\Development\IndexTTS\prompts\vo-10s.wav'
+$env:TTS_VOICES_DIR    = 'D:\Development\IndexTTS\prompts\voices'
+$env:TTS_DEFAULT_VOICE = 'chunqing'
 
 & "$envRoot\python.exe" 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\server.py'
 ```
+
+`voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，例如 `chunqing.wav` 是 `03-纯情闺蜜.wav` 的副本。增删音色后重启服务（ADR 0008）。
 
 服务默认与当前 WebUI 配置一致：v2.5、半精度（BF16）、不加载 QwenEmotion、`num_beams=1`。`TTS_MODEL_DIR` 必须指向上面的模型目录；不设置时会去 `<INDEXTTS_DIR>\checkpoints` 找 `config.yaml`。
 

@@ -11,11 +11,12 @@ import {
   voice,
 } from '@livekit/agents';
 import type { Emotion } from '@ptoy/segmenter';
+import { existsSync } from 'node:fs';
 import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
 import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
 import { createLlm } from '../llm/index.js';
-import { type Filler, type FillerBank, fillerAudio, loadFillerBank } from '../fillers/bank.js';
+import { type Filler, type FillerBank, fillerAudio, fillerManifestPath, loadFillerBank } from '../fillers/bank.js';
 import { FillerTurnGuard } from '../fillers/turn.js';
 import { IndexTTS, TtsError, createTtsBackend } from '../tts/index.js';
 import { isBackchannel } from './backchannel.js';
@@ -173,13 +174,22 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   // always a follow-up sentence in the same mood (~10–30% of sentences on Qwen3-8B), and falling
   // back to 平静 made those sentences sound flat next to their tagged neighbour.
   const tts = new IndexTTS({
-    backend: createTtsBackend(config.tts),
+    backend: createTtsBackend(config.tts, character.voice),
     sampleRate: config.audioSampleRate,
     segmenter: { emotionScope: 'untilNextTag' },
   });
-  const fillerBank = config.fillers
-    ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate, config.fillers.always)
-    : undefined;
+  // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
+  tts.prewarm();
+  if (config.tts.backend === 'gradio') {
+    logger.warn({ voice: character.voice }, 'gradio tts speaks every character with TTS_REF_AUDIO');
+  }
+  // Fillers in another voice would sound like a second person answering: no set, no fillers.
+  let fillerBank: FillerBank | undefined;
+  if (config.fillers) {
+    const manifest = fillerManifestPath(config.fillers.dir, character.voice);
+    if (existsSync(manifest)) fillerBank = await loadFillerBank(manifest, config.audioSampleRate, config.fillers.always);
+    else logger.warn({ voice: character.voice, manifest }, 'no fillers recorded for this voice');
+  }
   const fillerGuard = new FillerTurnGuard({
     onFillerStart: (at) => timing.onFillerStart(at),
     onReplyDropped: (id) => logger.info({ speechId: id }, 'caller spoke over the filler, queued reply dropped'),
@@ -266,6 +276,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   logger.info(
     {
       character: character.id,
+      voice: character.voice,
       asr: config.asrUrl,
       llm: config.llm.baseUrl,
       model: config.llm.model,

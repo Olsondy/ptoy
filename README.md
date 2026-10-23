@@ -43,11 +43,13 @@ TTS_REF_AUDIO=C:\path\to\ref.wav
 
    ```powershell
    $env:INDEXTTS_DIR = "D:\index-tts"
-   $env:TTS_REF_AUDIO = "C:\path\to\ref.wav"
+   # 音色目录：每个音色一个 <id>.wav，id 对应角色文件里的 voice:（如 chunqing.wav）
+   $env:TTS_VOICES_DIR = "C:\path\to\voices"
+   $env:TTS_DEFAULT_VOICE = "chunqing"
    python services\tts\server.py
    ```
 
-3. `apps\agent\.env` 里切换后端（`TTS_REF_AUDIO` 此时由服务端使用，Agent 不再需要）：
+3. `apps\agent\.env` 里切换后端（参考音频此时由服务端提供，Agent 不需要 `TTS_REF_AUDIO`；每个角色用自己的音色，只有这个后端支持）：
 
    ```ini
    TTS_BACKEND=fastapi

@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FILLERS_MANIFEST } from '../config.js';
-import { type Filler, FillerBank, fillerAudio, loadFillerBank } from './bank.js';
+import { existsSync } from 'node:fs';
+import { loadCharacters } from '../characters.js';
+import { DEFAULT_CHARACTERS_DIR, DEFAULT_FILLERS_DIR } from '../config.js';
+import { type Filler, FillerBank, fillerAudio, fillerManifestPath, loadFillerBank } from './bank.js';
 
 describe('loadFillerBank', () => {
+  it('ships a filler set for every shipped character voice', () => {
+    for (const c of loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters) {
+      expect(existsSync(fillerManifestPath(DEFAULT_FILLERS_DIR, c.voice)), `${c.id} → ${c.voice}`).toBe(true);
+    }
+  });
+
   it('loads every filler of the shipped manifest at the agent track rate', async () => {
-    const bank = await loadFillerBank(DEFAULT_FILLERS_MANIFEST, 24000);
+    const bank = await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'chunqing'), 24000);
     expect(bank.fillers.length).toBeGreaterThanOrEqual(6);
     expect(new Set(bank.fillers.map((f) => f.group))).toEqual(new Set(['thinking', 'ack', 'empathy']));
     for (const f of bank.fillers) {

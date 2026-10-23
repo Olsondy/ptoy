@@ -112,8 +112,8 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
   };
 }
 
-/** Pre-recorded fillers shipped in the repo (services/fillers generates them). */
-export const DEFAULT_FILLERS_MANIFEST = fileURLToPath(new URL('../../../assets/fillers/manifest.json', import.meta.url));
+/** Pre-recorded fillers shipped in the repo, one `<voice>/manifest.json` per voice (services/fillers generates them). */
+export const DEFAULT_FILLERS_DIR = fileURLToPath(new URL('../../../assets/fillers', import.meta.url));
 
 const conversationSchema = charactersSchema.extend({
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
@@ -137,7 +137,7 @@ const conversationSchema = charactersSchema.extend({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
-  FILLERS_MANIFEST: z.string().min(1).default(DEFAULT_FILLERS_MANIFEST),
+  FILLERS_DIR: z.string().min(1).default(DEFAULT_FILLERS_DIR),
   FILLERS_ALWAYS: z
     .enum(['true', 'false', '1', '0'])
     .default('false')
@@ -170,7 +170,10 @@ export interface GradioTtsConfig {
   readonly timeoutMs: number;
 }
 
-/** IndexTTS FastAPI service (`services/tts`): reference audio, language and model settings live on the server. */
+/**
+ * IndexTTS FastAPI service (`services/tts`): reference audios, language and model settings live on
+ * the server; each call asks for its character's voice.
+ */
 export interface FastApiTtsConfig {
   readonly backend: 'fastapi';
   readonly url: string;
@@ -192,7 +195,8 @@ export interface ConversationConfig extends CallConfig {
   readonly audioSampleRate: number;
   /** Play a pre-recorded filler when a user turn ends (`undefined` = disabled). */
   readonly fillers?: {
-    readonly manifestPath: string;
+    /** One `<voice>/manifest.json` per voice; a call plays its character voice's set. */
+    readonly dir: string;
     /** Every turn gets a filler (no chance-based skipping); `sim:call --barge-in` relies on it. */
     readonly always: boolean;
   };
@@ -240,6 +244,6 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     tts,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
-    fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST, always: e.FILLERS_ALWAYS } : undefined,
+    fillers: e.FILLERS_ENABLED ? { dir: e.FILLERS_DIR, always: e.FILLERS_ALWAYS } : undefined,
   };
 }

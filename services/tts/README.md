@@ -1,6 +1,6 @@
 # IndexTTS FastAPI 服务
 
-阶段 2 的 TTS 服务（ADR 0006、`docs/architecture/server.md` §8）：在 Windows GPU 主机上**替代** IndexTTS WebUI。启动时只加载一次 IndexTTS2 并预热（音色参考音频的特征按路径缓存在模型里），之后每个请求直接返回 PCM，没有 Gradio 的上传、排队、SSE 和文件下载开销；请求可按 ID 取消。
+阶段 2 的 TTS 服务（ADR 0006、`docs/architecture/server.md` §8）：在 Windows GPU 主机上**替代** IndexTTS WebUI。启动时只加载一次 IndexTTS2 并用默认音色预热（参考音频的特征按路径缓存在模型里，只缓存最近一个音色），之后每个请求直接返回 PCM，没有 Gradio 的上传、排队、SSE 和文件下载开销；请求可按 ID 取消。
 
 **WebUI 和本服务不能同时运行**：两份模型放不进 16GB 显存。
 
@@ -16,7 +16,8 @@ python -c "import fastapi, uvicorn"
 
 # 2. 启动（在 ptoy 仓库根目录）
 $env:INDEXTTS_DIR = "D:\index-tts"
-$env:TTS_REF_AUDIO = "D:\voice\ref.wav"
+$env:TTS_VOICES_DIR = "D:\voices"       # 每个音色一个 <音色 id>.wav
+$env:TTS_DEFAULT_VOICE = "chunqing"
 python services\tts\server.py
 ```
 
@@ -29,7 +30,9 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `INDEXTTS_DIR` | 当前目录 | IndexTTS 安装根目录（`webui.py` 所在目录） |
-| `TTS_REF_AUDIO` | 必填 | 角色音色参考 wav（本机路径）。所有请求都用这一个路径，命中模型内部的音色缓存 |
+| `TTS_VOICES_DIR` | — | 音色目录：每个 `<id>.wav` 是一个音色，id 即文件名（不含扩展名），与角色文件的 `voice:`、`assets/fillers/<id>/` 对应（ADR 0008）。增删音色后重启服务 |
+| `TTS_REF_AUDIO` | — | 单个参考 wav，作为 id 为其文件名的音色加入；未设 `TTS_DEFAULT_VOICE` 时它是默认音色。和 `TTS_VOICES_DIR` 至少设一个 |
+| `TTS_DEFAULT_VOICE` | 见说明 | 请求不带 `voice` 时用的音色。只有一个音色或设了 `TTS_REF_AUDIO` 时可不填 |
 | `TTS_MODEL_DIR` | `$INDEXTTS_DIR\checkpoints` | 同 WebUI `--model_dir` |
 | `TTS_MODEL_VERSION` | `2.5` | 同 WebUI `--version`（`2` / `2.5`） |
 | `TTS_HALF` | `1` | 半精度：v2.5 用 BF16（设备不支持时回退 FP32，同 WebUI），v2 用 FP16 |
@@ -53,10 +56,11 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 ### `POST /tts`
 
 ```json
-{ "text": "你好呀，", "emotion": "喜", "emo_alpha": 0.65, "request_id": "8c1f..." }
+{ "text": "你好呀，", "voice": "chunqing", "emotion": "喜", "emo_alpha": 0.65, "request_id": "8c1f..." }
 ```
 
 - `text`：必填，去掉首尾空白后非空，最多 `TTS_MAX_TEXT_CHARS` 字
+- `voice`：可选，音色 id，不填用 `TTS_DEFAULT_VOICE`；不存在返回 `422 unknown_voice`
 - `emotion`：可选，`喜 怒 哀 惧 厌恶 低落 惊喜 平静` 之一。`平静` 或不填 = 情绪跟随音色参考音频；其余映射为 one-hot 情感向量（下标顺序同 `@ptoy/segmenter` 的 `EMOTION_VECTOR_INDEX`），再经 IndexTTS2 `normalize_emo_vec(apply_bias=True)`，与 WebUI「使用情感向量控制」一致
 - `emotion_vector`：可选，8 个 `[0,1]` 的浮点数，和 `emotion` 二选一；全 0 等同跟随参考音频
 - `emo_alpha`：可选，`[0,1]`，默认 `TTS_EMO_ALPHA`
@@ -72,7 +76,11 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 | `X-Request-Id` | 请求 ID |
 | `X-Queue-Ms` / `X-Synth-Ms` / `X-Audio-Ms` | 排队耗时 / GPU 合成耗时 / 音频时长 |
 
-错误返回 JSON `{ "error", "detail" }`：`422` 参数不合法，`409 cancelled` 被取消，`409 duplicate_request_id` 同 ID 正在处理，`503 queue_full`，`500 synthesis_failed`。
+错误返回 JSON `{ "error", "detail" }`：`422` 参数不合法（含 `unknown_voice`），`409 cancelled` 被取消，`409 duplicate_request_id` 同 ID 正在处理，`503 queue_full`，`500 synthesis_failed`。
+
+### `POST /warm`
+
+`{ "voice": "chunqing" }` → `{ "voice", "state" }`。IndexTTS2 只缓存最近一个音色的说话人特征，换音色后的第一句要重新提取。Agent 在每通电话开始时调用它：模型已经是这个音色时立即返回 `loaded`；否则在 GPU 队列里合成一句短句并丢弃，返回 `warmed`。
 
 ### `POST /cancel/{request_id}`
 
@@ -85,7 +93,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 
 ### `GET /health`
 
-`{ status, queued, running, model, precision, sample_rate, output_mode, diffusion, generation, infer, load_ms, warmup_ms, vram_mib, generation_overrides }`。`generation_overrides` 列出 `generation` 字段可覆盖的参数。
+`{ status, queued, running, model, precision, sample_rate, output_mode, voices, default_voice, loaded_voice, diffusion, generation, infer, load_ms, warmup_ms, vram_mib, generation_overrides }`。`loaded_voice` 是模型当前缓存的音色。`generation_overrides` 列出 `generation` 字段可覆盖的参数。
 
 ## GPU 串行
 

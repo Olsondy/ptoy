@@ -9,7 +9,7 @@
 
 后端：
   - gradio（默认）：IndexTTS WebUI，参考音频由 --refs 上传
-  - fastapi：services/tts 服务，参考音频固定为服务端的 TTS_REF_AUDIO（--refs 不用填），
+  - fastapi：services/tts 服务，参考音频是服务端音色目录里的音色，--voices 选几个对比（不填用默认音色），
     采样参数按请求覆盖（`generation` 字段），不用重启服务
 
 用法（标准库即可，Mac 经局域网或 Windows 本机都能跑）：
@@ -17,6 +17,7 @@
   python bench/compare_ref_audio.py --tts-url http://192.168.31.82:7860 --refs ~/voices/ --out /tmp/ref-ab
   python bench/compare_ref_audio.py --backend fastapi --tts-url http://192.168.31.82:8002 \
       --sweep temperature=0.8,0.6,0.4 --sweep top_p=0.8,0.6
+  python bench/compare_ref_audio.py --backend fastapi --tts-url http://192.168.31.82:8002 --voices chunqing wenrou
   只要整段版（省一半时间）：加 --no-segmented；自定义台词：--texts lines.txt（一行一条）
   --sweep 可重复，多个参数取笛卡尔积，每种组合一列；可扫 temperature / top_p / top_k / repetition_penalty
 
@@ -159,7 +160,7 @@ class GradioTts:
 
 
 class FastApiTts:
-    """services/tts 的 POST /tts：参考音频是服务端固定的，返回裸 s16le PCM。"""
+    """services/tts 的 POST /tts：参考音频是服务端音色目录里的音色（按 id 选），返回裸 s16le PCM。"""
 
     def __init__(self, url, timeout=120):
         self.base = url.rstrip("/")
@@ -167,8 +168,10 @@ class FastApiTts:
         with urllib.request.urlopen(f"{self.base}/health", timeout=timeout) as resp:
             self.health = json.load(resp)
 
-    def synth(self, text, generation):
+    def synth(self, text, generation, voice=None):
         body = {"text": text, "emotion": "平静"}
+        if voice:
+            body["voice"] = voice
         if generation:
             body["generation"] = generation
         req = urllib.request.Request(
@@ -285,6 +288,7 @@ def main():
     parser.add_argument("--backend", choices=("gradio", "fastapi"), default="gradio")
     parser.add_argument("--tts-url", required=True, help="WebUI 如 http://127.0.0.1:7860；FastAPI 服务如 http://127.0.0.1:8002")
     parser.add_argument("--refs", nargs="+", help="候选参考音频文件或目录（可混用）；gradio 必填，fastapi 不用")
+    parser.add_argument("--voices", nargs="+", help="fastapi：服务端的候选音色 id（/health 的 voices），默认只用默认音色")
     parser.add_argument("--sweep", action="append", help="采样参数，如 temperature=0.8,0.6；可重复，取笛卡尔积")
     parser.add_argument("--texts", help="台词文件，一行一条；默认用内置的 5 条")
     parser.add_argument("--out", default=str(Path(__file__).parent / "out" / "ref-ab"), help="输出目录")
@@ -302,18 +306,23 @@ def main():
     columns = []
     if args.backend == "fastapi":
         if args.refs:
-            sys.exit("fastapi 后端的参考音频是服务端的 TTS_REF_AUDIO，不接受 --refs")
+            sys.exit("fastapi 后端用服务端的音色（--voices），不接受 --refs")
         tts = FastApiTts(args.tts_url)
         supported = set(tts.health.get("generation_overrides", []))
         unsupported = {k for g in variants for k in g} - supported
         if unsupported:
             sys.exit(f"服务不支持按请求覆盖 {sorted(unsupported)}（/health 的 generation_overrides），先更新并重启 services/tts")
-        ref_name = tts.health.get("ref_audio", "server")
-        print(f"服务端参考音频 {ref_name}，默认采样 {tts.health.get('generation')}")
-        for g in variants:
-            slug = "_".join(f"{k}{v}" for k, v in g.items()) or "default"
-            columns.append((out / f"{Path(ref_name).stem}_{slug}", f"{ref_name}｜{variant_name(g)}", None,
-                            lambda text, g=g: tts.synth(text, g)))
+        available = tts.health.get("voices", [])
+        voices = args.voices or [tts.health.get("default_voice", "server")]
+        unknown = set(args.voices or []) - set(available)
+        if unknown:
+            sys.exit(f"服务端没有音色 {sorted(unknown)}（有 {available}）")
+        print(f"服务端音色 {available}，对比 {voices}，默认采样 {tts.health.get('generation')}")
+        for voice in voices:
+            for g in variants:
+                slug = "_".join(f"{k}{v}" for k, v in g.items()) or "default"
+                columns.append((out / f"{voice}_{slug}", f"{voice}｜{variant_name(g)}", None,
+                                lambda text, g=g, voice=voice: tts.synth(text, g, voice if args.voices else None)))
     else:
         if not args.refs:
             sys.exit("gradio 后端需要 --refs")
