@@ -1,0 +1,5 @@
+# Runtime deps on top of the IndexTTS env. Gradio already depends on fastapi + uvicorn, so the
+# WebUI env normally has them; install only if `python -c "import fastapi, uvicorn"` fails.
+fastapi>=0.100
+uvicorn>=0.23
+numpy>=1.24

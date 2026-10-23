@@ -10,6 +10,11 @@
  *   --turns "a|b|c"        what the caller says, one turn each (default: 3 short questions)
  *   --fake asr,llm,tts     replace those services with in-process fakes (test/fakes)
  *   --fail llm|tts         with the corresponding fake: every request fails
+ *   --emotions "neutral|angry|happy"
+ *                          with the fake ASR: SenseVoice emotion of each turn (default neutral).
+ *                          With the fake LLM, checks that each LLM request carries the turn's
+ *                          `[用户语气:X]` (none for neutral) and only on the message being answered;
+ *                          with the fake TTS too, that every segment got its tag's emotion vector.
  *   --voice Ting-Ting      macOS `say` voice
  *   --barge-in 200         the caller starts the last turn 200 ms after the agent audio of the
  *                          turn before started (during its filler at 200, inside the reply at
@@ -45,6 +50,9 @@ import type { FakeServer } from '../test/fakes/http.js';
 import { startFakeOpenAI } from '../test/fakes/openai.js';
 import { isBackchannel } from '../src/pipelines/backchannel.js';
 import { decodeWav, encodeWav } from '../src/tts/wav.js';
+import { ASR_EMOTION_TONE, withTone } from '../src/emotion/user-tone.js';
+import type { AsrEmotion } from '../src/stt/sensevoice.js';
+import { EMOTIONS, type Emotion } from '@ptoy/segmenter';
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,6 +64,7 @@ const { values } = parseArgs({
     turns: { type: 'string', default: '你好，你是谁？|你平时喜欢做什么？|那我们周末一起去爬山好不好？' },
     fake: { type: 'string', default: '' },
     fail: { type: 'string' },
+    emotions: { type: 'string', default: '' },
     voice: { type: 'string', default: 'Ting-Ting' },
     'turn-timeout': { type: 'string', default: '30000' },
     'barge-in': { type: 'string' },
@@ -69,6 +78,7 @@ const turns = values.turns.split('|').map((t) => t.trim()).filter(Boolean);
 /** The turn's text as the ASR returns it. */
 const spokenText = (turn: string) => turn.replaceAll('~', '');
 const fakes = new Set(values.fake.split(',').map((s) => s.trim()).filter(Boolean));
+const turnEmotions = values.emotions.split('|').map((e) => e.trim().toLowerCase());
 const turnTimeoutMs = Number(values['turn-timeout']);
 const bargeInMs = values['barge-in'] === undefined ? undefined : Number(values['barge-in']);
 /** Index of the turn the caller interrupts. */
@@ -91,20 +101,22 @@ async function main(): Promise<number> {
 
   // ---- services ----
   const servers: FakeServer[] = [];
-  let llmRequests: Record<string, unknown>[] | undefined;
   if (fakes.has('asr')) {
-    const asr = await startFakeAsr(turns.map(spokenText));
+    const asr = await startFakeAsr(turns.map(spokenText), 0, turnEmotions);
     servers.push(asr);
     env.ASR_URL = asr.url;
   }
+  let llmRequests: Record<string, unknown>[] = [];
+  let ttsCalls: Record<string, unknown>[] = [];
   if (fakes.has('llm')) {
     const llm = await startFakeOpenAI({
       fail: values.fail === 'llm' ? () => 'status' : undefined,
       reply: (body) => {
         const messages = body.messages as { role: string; content: string }[];
-        const last = messages.at(-1)?.content ?? '';
+        const last = (messages.at(-1)?.content ?? '').replace(TONE_PREFIX, '');
         if (messages.some((m) => m.content.includes('\uFEFF'))) return ['历史里混进了字幕分隔符。'];
-        return ['[喜]', '收到', '，你说的是', `“${last}”。`, '还想', '聊点', '什么？'];
+        // Per-sentence tags, one split across tokens, one invalid (→ 平静).
+        return ['[喜]', '收到', '，你说的是', `“${last}”。`, '[哀', ']还想', '聊点', '什么？', '[开心]随便', '说说。'];
       },
       tokenDelayMs: 20,
     });
@@ -115,7 +127,9 @@ async function main(): Promise<number> {
   if (fakes.has('tts')) {
     const tts = await startFakeGradio({ synthMs: Number(values['tts-ms']), fail: values.fail === 'tts' ? () => 'error' : undefined });
     servers.push(tts);
+    ttsCalls = tts.calls;
     env.TTS_GRADIO_URL = tts.url;
+    env.TTS_EMOTION_CONTROL = 'vector';
     const ref = join(scratch, 'ref.wav');
     writeFileSync(ref, encodeWav({ samples: new Int16Array(22050), sampleRate: 22050, channels: 1 }));
     env.TTS_REF_AUDIO = ref;
@@ -380,13 +394,13 @@ async function main(): Promise<number> {
   const allAnswered = results.every((r, i) => answerless(i) || (r.clientLatencyMs !== undefined && r.heard));
   const expectFailure = Boolean(values.fail);
   let ok = expectFailure ? results.every((r) => r.error) : allAnswered;
-  const problems = expectFailure ? [] : checkTurns(results, timings);
+  const problems = expectFailure ? [] : [...checkTurns(results, timings), ...checkEmotions(llmRequests, ttsCalls)];
   // One committed agent turn per caller turn: more means a pause inside a turn ended it early.
   const expectedTurns = turns.length - (bargesWithBackchannel ? 1 : 0);
   out(`\nendpoints: ${turns.length} caller turns → ${timings.length} committed: ${JSON.stringify(timings.map((t) => t.user))}`);
   if (!expectFailure && timings.length > expectedTurns) problems.push(`${timings.length - expectedTurns} caller turn(s) were split by a pause`);
   if (!expectFailure && bargingTurn >= 0) {
-    problems.push(...checkBargeIn({ spans, allBursts, subtitleStreams, timings, llmRequests }));
+    problems.push(...checkBargeIn({ spans, allBursts, subtitleStreams, timings, llmRequests: fakes.has('llm') ? llmRequests : undefined }));
   }
   for (const p of problems) out(`CHECK FAILED: ${p}`);
   ok &&= problems.length === 0;
@@ -397,8 +411,56 @@ async function main(): Promise<number> {
   return ok ? 0 : 1;
 }
 
-/** The fake LLM's reply to `said` as the caller should see it (tag removed). */
-const fakeReply = (said: string) => `收到，你说的是“${said}”。还想聊点什么？`;
+/** The fake LLM's reply to `said` as the caller should see it (tags removed). */
+const fakeReply = (said: string) => `收到，你说的是“${said}”。还想聊点什么？随便说说。`;
+
+const TONE_PREFIX = /^\[用户语气:[^\]]*\] /u;
+
+/** Emotion each segment of the fake reply must be synthesized with, by its text. */
+const FAKE_SEGMENT_EMOTIONS: [RegExp, Emotion][] = [
+  [/^收到，$/u, '喜'],
+  [/^你说的是/u, '喜'],
+  [/^还想聊点什么？$/u, '哀'],
+  [/^随便说说。$/u, '平静'],
+];
+
+/**
+ * Emotion chain checks (#13), with the fake LLM:
+ * - every LLM request: the last (answered) user message is the turn's text with its tone prefix
+ *   (none for neutral); earlier messages carry no prefix and no `[...]` tag
+ * - with the fake TTS: each segment's request uses its tag's emotion (vector) or the reference (平静)
+ */
+function checkEmotions(requests: Record<string, unknown>[], ttsCalls: Record<string, unknown>[]): string[] {
+  if (!fakes.has('llm')) return [];
+  const problems: string[] = [];
+  const expected = new Map(
+    turns.map((t, i) => [t, withTone(t, fakes.has('asr') ? ASR_EMOTION_TONE[(turnEmotions[i] || 'neutral') as AsrEmotion] ?? '平静' : '平静')]),
+  );
+  for (const [r, body] of requests.entries()) {
+    const messages = (body.messages as { role: string; content: string }[]).filter((m) => m.role !== 'system');
+    const last = messages.at(-1);
+    const said = last?.content.replace(TONE_PREFIX, '') ?? '';
+    const want = expected.get(said);
+    if (want !== undefined && last?.content !== want) {
+      problems.push(`llm request ${r + 1}: user message "${last?.content}", expected "${want}"`);
+    }
+    for (const m of messages.slice(0, -1)) {
+      if (/[[\]【】]/u.test(m.content)) problems.push(`llm request ${r + 1}: history ${m.role} message has a tag: "${m.content}"`);
+    }
+  }
+  if (!fakes.has('tts')) return problems;
+  for (const call of ttsCalls) {
+    const text = String(call.text);
+    const want = FAKE_SEGMENT_EMOTIONS.find(([re]) => re.test(text))?.[1];
+    const vec = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => Number(call[`vec${i}`] ?? 0));
+    const got: Emotion | undefined =
+      call.emo_control_method === '使用情感向量控制' ? EMOTIONS[vec.indexOf(Math.max(...vec))] : '平静';
+    if (want && got !== want) problems.push(`tts segment "${text}": emotion ${got}, expected ${want}`);
+  }
+  const vectorSegments = ttsCalls.filter((c) => c.emo_control_method === '使用情感向量控制').length;
+  if (ttsCalls.length > 0 && vectorSegments === 0) problems.push('tts: no segment used the emotion vector');
+  return problems;
+}
 
 /**
  * Per-turn checks on what the caller received:
@@ -477,7 +539,7 @@ function checkBargeIn(f: BargeInFacts): string[] {
   );
 
   if (bargesWithBackchannel) {
-    if (f.llmRequests?.some((r) => lastUser(r) === spokenText(turns[bargingTurn] ?? ''))) {
+    if (f.llmRequests?.some((r) => lastUser(r)?.endsWith(spokenText(turns[bargingTurn] ?? '')))) {
       problems.push('barge-in: the backchannel got its own reply');
     }
     const t = f.timings.find((x) => x.user === said);

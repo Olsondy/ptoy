@@ -18,7 +18,7 @@ export interface PcmAudio {
  * The seam between the TTS plugin and a concrete IndexTTS deployment.
  *
  * A backend turns one segment into one whole clip (IndexTTS is not streaming). Implementations:
- * `IndexTtsGradioBackend` (WebUI `/gen_single`, stage 1); #14 adds a FastAPI backend.
+ * `IndexTtsGradioBackend` (WebUI `/gen_single`, stage 1) and `IndexTtsFastApiBackend` (`services/tts`, stage 2).
  * Choosing one is a config change (`TTS_BACKEND`), see `createTtsBackend`.
  *
  * Contract:

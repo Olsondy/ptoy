@@ -8,6 +8,7 @@
 - `apps/web`：前端（React）
 - `apps/agent`：Voice Agent（LiveKit Agents, Node/TS）
 - `services/fillers/`：预录语气词生成工具
+- `services/tts/`：IndexTTS FastAPI 服务（Windows GPU 主机上运行，替代 WebUI）
 - `bench/`：GPU 链路压测
 - `docs/architecture/`：架构详情
 - `docs/roadmap/`：功能路线图（当前：`mvp-v1.md`）
