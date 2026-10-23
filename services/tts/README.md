@@ -17,7 +17,7 @@ python -c "import fastapi, uvicorn"
 # 2. 启动（在 ptoy 仓库根目录）
 $env:INDEXTTS_DIR = "D:\index-tts"
 $env:TTS_VOICES_DIR = "D:\voices"       # 每个音色一个 <音色 id>.wav
-$env:TTS_DEFAULT_VOICE = "chunqing"
+$env:TTS_DEFAULT_VOICE = "default-relaxing"
 python services\tts\server.py
 ```
 
@@ -56,7 +56,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 ### `POST /tts`
 
 ```json
-{ "text": "你好呀，", "voice": "chunqing", "emotion": "喜", "emo_alpha": 0.65, "request_id": "8c1f..." }
+{ "text": "你好呀，", "voice": "default-relaxing", "emotion": "喜", "emo_alpha": 0.65, "request_id": "8c1f..." }
 ```
 
 - `text`：必填，去掉首尾空白后非空，最多 `TTS_MAX_TEXT_CHARS` 字
@@ -80,7 +80,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 
 ### `POST /warm`
 
-`{ "voice": "chunqing" }` → `{ "voice", "state" }`。IndexTTS2 只缓存最近一个音色的说话人特征，换音色后的第一句要重新提取。Agent 在每通电话开始时调用它：模型已经是这个音色时立即返回 `loaded`；否则在 GPU 队列里合成一句短句并丢弃，返回 `warmed`。
+`{ "voice": "default-relaxing" }` → `{ "voice", "state" }`。IndexTTS2 只缓存最近一个音色的说话人特征，换音色后的第一句要重新提取。Agent 在每通电话开始时调用它：模型已经是这个音色时立即返回 `loaded`；否则在 GPU 队列里合成一句短句并丢弃，返回 `warmed`。
 
 ### `POST /cancel/{request_id}`
 

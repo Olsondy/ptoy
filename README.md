@@ -43,9 +43,9 @@ TTS_REF_AUDIO=C:\path\to\ref.wav
 
    ```powershell
    $env:INDEXTTS_DIR = "D:\index-tts"
-   # 音色目录：每个音色一个 <id>.wav，id 对应角色文件里的 voice:（如 chunqing.wav）
+   # 音色目录：每个音色一个 <id>.wav，id 对应角色文件里的 voice:（如 default-relaxing.wav）
    $env:TTS_VOICES_DIR = "C:\path\to\voices"
-   $env:TTS_DEFAULT_VOICE = "chunqing"
+   $env:TTS_DEFAULT_VOICE = "default-relaxing"
    python services\tts\server.py
    ```
 
