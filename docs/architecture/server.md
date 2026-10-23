@@ -174,9 +174,9 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| `TURN_DETECTOR` | `vad` | VAD 静音即结束轮次；`eot` 改用 LiveKit 本地音频轮次模型 `turn-detector-v1-mini`（叠加在 VAD 上） |
+| `TURN_DETECTOR` | `transcript`（#12 起；原为 `vad`） | `vad`：VAD 静音即结束轮次；`transcript`：同 `vad`，但转写停在“没说完”的地方时多等（§11.1）；`eot`：LiveKit 本地音频轮次模型 `turn-detector-v1-mini`（叠加在 VAD 上） |
 | `VAD_MIN_SILENCE_MS` | 550 | 静音超过它才切句。它同时决定送 ASR 的音频怎么切 |
-| `ENDPOINTING_MIN_DELAY_MS` / `MAX` | 500 / 3000 | VAD 模式下实际等待 = max(VAD 静音, minDelay)；`eot` 判定“没说完”时等 maxDelay |
+| `ENDPOINTING_MIN_DELAY_MS` / `MAX` | 800 / 2000（#12 起；原为 500 / 3000） | 实际等待 = max(VAD 静音 + ASR, minDelay)，从用户最后一个字算起；`transcript` / `eot` 判定“没说完”时等 maxDelay |
 | `ASR_TIMEOUT_MS` | 5000 | 单次识别超时 |
 
 **实测**（Mac，`say -v Ting-Ting` 合成 48kHz 语音，经本地 LiveKit 发给 Agent；句中停顿是去掉 TTS 自带尾部静音后插入的纯静音）：
@@ -188,7 +188,45 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 | 1200ms | 切成两轮 | 合成一轮（0.22） |
 | 完整句子的轮次结束延迟 | VAD 结束后约 0.25–0.4s（就是 ASR 耗时） | 5 句里 3 句被判“没说完”（0.13–0.31），要多等约 2.4s |
 
-**结论**：默认用 `vad` + 550ms。600ms 以内的句中停顿不会切句；延迟符合 §7 的 500ms 端点预算。`eot` 在合成语音上会把大量完整句子判成“没说完”，直接把延迟拉高到 3s，换来的只是偶尔合并 1s 以上的停顿。合成语音的语调不够自然，结论需要真人麦克风复核：试 `TURN_DETECTOR=eot`，看 `eot prediction` 日志里的 `endOfTurnProbability`。
+**结论**（#8 时，已被 §11.1 取代）：默认用 `vad` + 550ms。600ms 以内的句中停顿不会切句；延迟符合 §7 的 500ms 端点预算。`eot` 在合成语音上会把大量完整句子判成“没说完”，直接把延迟拉高到 3s，换来的只是偶尔合并 1s 以上的停顿。合成语音的语调不够自然，结论需要真人麦克风复核：试 `TURN_DETECTOR=eot`，看 `eot prediction` 日志里的 `endOfTurnProbability`。
+
+### 11.1 轮次与打断调优（M2 #12）
+
+**问题**：#8 的结论是在 ASR 跑 Mac CPU（250–460ms）时测的，慢 ASR 顺带拉长了等待。ASR 换到 Windows（约 0.13s）后，实际等待只剩 550ms VAD 静音 + 0.13s，用户句中停顿 0.6s 就被当成说完了。
+
+**轮次结束（`TURN_DETECTOR=transcript`，`apps/agent/src/pipelines/endpointing.ts`）**：一个不调模型的文本“轮次检测器”，实现框架的 `_TurnDetector` 接口。每段 VAD 切出的语音转写完成后，框架会问它一次：转写停在逗号、连接词（然后、但是、因为、所以）、起句词（我觉得、我想、如果…的话）、填充词（那个、呃）或悬空虚词（和、把、的时候）上，就等 `ENDPOINTING_MAX_DELAY_MS`，否则等 `ENDPOINTING_MIN_DELAY_MS`。等待期间用户接着说，就取消这次结束。SenseVoice 会给每段补“。”，所以句末的句号不算数。
+
+实测（`sim:call --fake llm,tts`，真实 ASR 在 Windows 上，Mac 经 Wi-Fi；5 句句中带停顿的话 + 1 句完整的话，停顿在 `say` 两段之间，实际静音约等于停顿 + 100ms）。表中是被误切成两轮的句数，以及完整句子从说完到语气词响起的时间：
+
+| 配置 | 停顿 600ms | 900ms | 1200ms | 说完 → 语气词 |
+|---|---|---|---|---|
+| `vad` 500（旧默认） | 5/5 | — | — | 约 0.58s |
+| `vad` 800 | 0/5 | 4/5 | 4/5 | 约 0.8s |
+| `vad` 1000 | 0/5 | 1/5 | 4/5 | 约 1.0s |
+| **`transcript` 800 / 2000（新默认）** | 0/5 | 2/5 | 2/5 | 约 0.8s |
+| `transcript` 1000 / 2000 | 0/5 | 0/5 | 2/5 | 约 1.0s |
+| `eot`（maxDelay 3000） | 0/5 | 0/5 | 1/5 | 6 句里 5 句约 3.0s |
+
+`transcript` 剩下的误切来自两类：前半句本身就完整（“我今天去了超市。”），以及合成语音的“那个”被 ASR 识别成了韩语。`eot` 几乎不切，但会把完整句子判成“没说完”，每句多等约 2.4s，所以不用。**取舍**：新默认让完整句子的感知延迟多了约 0.2s（语气词在轮次结束时播放，能掩盖一部分），换来 0.8s 以内的任何停顿和 2s 以内“没说完”的停顿都不会被切断。说话慢、停顿多的用户可以把 `ENDPOINTING_MIN_DELAY_MS` 调到 1000，代价是每句再多等 0.2s。
+
+**打断**（`listening.ts` / `conversation.ts`）：
+
+| 参数 | 默认 | 理由 |
+|---|---|---|
+| `INTERRUPTION_MIN_SPEECH_MS` | 150（原 500） | 用户说话满这么久，AI 的声音就**暂停**。这一步可撤销：转写确认后才真正打断，没有转写就恢复。实测从用户开口到收到的 AI 音频停下：500ms 时 618ms、300ms 时 410ms、200ms 时 296ms、150ms 时 239–265ms，约等于阈值 + 100ms（VAD 判定 + 音轨缓冲）。验收要求 300ms 以内，所以取 150 |
+| `FALSE_INTERRUPTION_TIMEOUT_MS` | 1000（框架默认 2000） | 暂停后没等到转写（咳嗽、噪声、被丢弃的“嗯”），从 VAD 判定说完（再过 550ms 静音）起再等这么久就恢复播放。要比 ASR 往返长，否则真打断的话会先恢复、再被切 |
+| 附和词 | — | AI 有语音在排队、播放或暂停时，只含“嗯、啊、哦、对、是、好的”这类词的转写由 STT 直接丢掉（`backchannel.ts`），不打断 AI，也不算新的一轮。AI 空闲时“嗯”照常作为回答 |
+| `VAD_MIN_SILENCE_MS` | 550（不变） | 见 §11 |
+
+短促噪声和咳嗽最多让 AI 停顿约 1.5s（咳嗽 + 550ms + 1000ms），然后接着说，不会丢掉这句回复。阈值小于 150ms 时，一个单字就能让 AI 停下，收益不大。
+
+**语气词之后**：`FillerTurnGuard` 不再按“说话满 500ms”计时，改成在新一轮的第一条转写出来时丢弃还没开播的回复。#11 的两个已知问题因此消失：持续噪声不再丢掉回复；语气词放完、回复还没开播时用户接着说，回复也不会从停顿里漏出 1–2 个字（框架把回复暂停在 `FALSE_INTERRUPTION_TIMEOUT_MS`，直到转写出来）。
+
+**对话历史**：被打断的回复只按实际播放到的位置写进历史（框架按播放位置截断同步字幕；我们插入的 U+FEFF 在写入前去掉）。用假服务测：写进历史的文本就是播放的前缀，比字幕少 0–1 个字（字幕先放出当前这个字），长度和假 TTS 的 100ms/字吻合；开播前被丢掉的回复不写进历史。真实服务测：“给我讲讲你最喜欢的一本书吧”被打断后，历史里是“我最喜欢的是《小”，下一轮回复没有提到没说出口的部分。
+
+**已知问题**：开播前被丢掉的回复偶尔会在字幕里闪一个字（框架打断时会放出同步器里的第一个“词”，按 U+FEFF 切分后就是一个字）；AI 每通电话最前 3s 的语音仍不可打断（框架的 AEC 预热）。
+
+**需要人在扬声器外放下验证**：AI 不会被自己的声音打断（取决于浏览器的 AEC，`sim:call` 是直接收发音轨，测不了）；真人咳嗽、清嗓、“嗯”时 AI 的停顿和恢复是否自然；真人说话时 0.8s / 2s 这组端点等待是否合适。
 
 **情绪/事件**：每条 FINAL_TRANSCRIPT 的 `alternatives[0].metadata` 带 `{ emotion, events, inferenceMs, audioMs }`，用 `asrMetadataOf(ev)` 读取；`SenseVoiceSTT` 的 `onTranscript` 每识别一句回调一次。#13 用它记下每句的情绪，作为 `[用户语气:X]` 交给 LLM（见 §12“情绪链路”和 `docs/architecture/emotion-pipeline.md`）。字幕走 STT 原文，不受影响。
 
@@ -207,7 +245,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - **语气词**（#11，`apps/agent/src/fillers/`）：`FILLERS_ENABLED`（默认开）、`FILLERS_MANIFEST`（默认仓库的 `assets/fillers/manifest.json`）。每个进程加载一次并重采样到音轨采样率。用户一轮结束（`onUserTurnCompleted`，即 EOU 时刻）就用 `session.say('', { audio, addToChatCtx: false })` 排一条语气词在正式回复之前；回复的 LLM/TTS 同时开始，播放在框架的 speech 队列里排在语气词之后，所以不会重叠：回复先好就等语气词放完，语气词先放完就静音等回复。
   - 选组（`chooseFillerGroup`，按用户最终文本 + SenseVoice 情绪）：负面情绪（sad/angry/fearful/disgusted）或倾诉词（累、难过、烦、唉…）→ `empathy`；请求（帮我、能不能、…好不好）→ `ack`；提问（？、句末吗/呢、什么/怎么/为什么…）→ `thinking`；其余 → `ack`。组内随机，绝不与上一轮同一条（组内只剩上一条时换 `ack` 或任意一条）。
   - 不进对话历史、不出字幕（文本为空）：LLM 不知道自己说过“好的，”，偶尔会在回复开头重复一次类似的话。
-  - 打断：语气词是普通可打断的 speech，用户开口按框架规则暂停/停止。用户在语气词期间（回复还没开始）连续说话满 500ms（`INTERRUPTION_MIN_SPEECH_MS`，与框架打断阈值相同）时，排队的回复直接丢弃（`FillerTurnGuard`），否则它会在用户的停顿里冒出半句、随后被新一轮打断。回复已经开始播放时按普通打断处理。框架有 3s 的 AEC 预热，通话中 AI 的前 3s 语音不可打断。
+  - 打断：语气词是普通可打断的 speech，用户开口按框架规则暂停/停止（§11.1）。回复还没开播时用户说了新的话（有转写），排队的回复直接丢弃（`FillerTurnGuard`），否则它会在用户的停顿里冒出半句、随后被新一轮打断。回复已经开始播放时按普通打断处理。框架有 3s 的 AEC 预热，通话中 AI 的前 3s 语音不可打断。
 - **故障**：LLM（重试 `LLM_MAX_RETRY` 次后）或 TTS 失败都会记 error 日志，并把提示写到 Agent 的参与者属性 `ptoy.agent_error`，网页在 AI 字幕位置显示；AI 下次开口时清空。`maxUnrecoverableErrors` 设为不限，模型服务挂掉时通话不会断。
 
 **每轮耗时日志**：每轮一条 info 日志，`msg` 为 `turn timing`，字段在 `turn` 对象里（`apps/agent/src/pipelines/turn-timing.ts`）。时长单位都是 ms；`t*` 是相对“用户停止说话”（VAD 判定的语音结束点，不含静音等待）的偏移。
@@ -230,7 +268,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 一轮在 AI 回复写入对话历史时结束；没有回复时（LLM 失败、开口前被打断）在下一轮开始或会话关闭时输出。
 
-**模拟通话**：`pnpm --filter @ptoy/agent sim:call -- --turns "你好|..."` 启动 Agent worker，用 macOS `say` 的中文语音当来电者逐轮说话，打印每轮收到的音频（含按静音切开的音频段）、字幕、`ptoy.agent_error` 和 `turn timing`；`--fake asr,llm,tts` 换成进程内假服务，`--fail llm|tts` 验证故障提示，`--barge-in 150` 让来电者在倒数第二轮的语气词期间插话；设 `LIVEKIT_SERVER_BIN` 时自带一个临时 LiveKit。每轮检查：字幕不含标签（假 LLM 时与回复逐字相同）、语气词与回复的音频跨度不短于两者之和（无重叠/截断）、语气词不连续重复。
+**模拟通话**：`pnpm --filter @ptoy/agent sim:call -- --turns "你好|..."` 启动 Agent worker，用 macOS `say` 的中文语音当来电者逐轮说话，打印每轮收到的音频（含按静音切开的音频段）、字幕、`ptoy.agent_error` 和 `turn timing`；`--fake asr,llm,tts` 换成进程内假服务，`--fail llm|tts` 验证故障提示，`--barge-in N` 让来电者在倒数第二轮 AI 出声 N ms 后插话（语气词期间、回复中、语气词后回复未开播时配合 `--tts-ms 2500`；最后一轮是“嗯”时测附和），检查从开口到 AI 音频停下不超过 `--max-stop-ms`（300）、来电者说话期间没有漏音、下一轮 LLM 请求里被打断的回复只有播放过的前缀；轮次里的 `~` 是 `--pause-ms` 长的停顿，每轮被拆成多轮会报错；设 `LIVEKIT_SERVER_BIN` 时自带一个临时 LiveKit。每轮检查：字幕不含标签（假 LLM 时与回复逐字相同）、语气词与回复的音频跨度不短于两者之和（无重叠/截断）、语气词不连续重复。
 
 **实测（Mac 经 Wi-Fi 调 Windows 的 LLM 和 TTS，ASR 跑在 Intel Mac CPU 上；按规则这组数据不作数，只用来看各段比例）**，6 轮连续对话，上下文连贯（第 5 轮记得名字，第 6 轮能概括前面聊过的话题）：
 
