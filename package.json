@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "app": "node scripts/app.mjs",
     "dev:web": "pnpm --filter @ptoy/web dev",
     "dev:agent": "pnpm --filter @ptoy/agent dev",
     "dev:token": "pnpm --filter @ptoy/agent dev:token",
