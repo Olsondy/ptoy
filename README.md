@@ -40,7 +40,7 @@
    pnpm --filter @ptoy/web run build
    ```
 
-5. **ASR 环境**：按 [services/asr/README.md](services/asr/README.md) 创建 conda 环境 `ptoy-asr`（CPU 版 torch）。
+5. **ASR 环境**：已经有装好 `services/asr` 的 conda 环境就直接用，在 `config.ps1` 里把 `AsrEnv` 改成它的名字；没有的话按 [services/asr/README.md](services/asr/README.md) 新建一个（CPU 版 torch）。
 6. **防火墙**（管理员 PowerShell）：
 
    ```powershell
@@ -55,7 +55,7 @@ Copy-Item apps\agent\.env.example apps\agent\.env
 Copy-Item apps\web\.env.example apps\web\.env
 ```
 
-- `deploy\windows\config.ps1`：填好 `IndexTtsDir`、`IndexTtsArgs`（IndexTTS 的启动参数）、`LlamaServerExe`、`LlamaModel`、`LiveKitExe`。
+- `deploy\windows\config.ps1`：填好 `IndexTtsDir`、`IndexTtsArgs`（IndexTTS 的启动参数）、`LlamaServerExe`、`LlamaModel`、`LiveKitExe`、`AsrEnv`（ASR 所在的 conda 环境名），本地已有 SenseVoice 模型时再填 `AsrModel`（模型目录）。
 - `apps\agent\.env`：
 
   ```ini
@@ -77,7 +77,7 @@ Copy-Item apps\web\.env.example apps\web\.env
 powershell -ExecutionPolicy Bypass -File deploy\windows\start-all.ps1
 ```
 
-脚本会按 IndexTTS → llama-server → ASR → LiveKit → token → Agent → 网页 的顺序，每个服务开一个窗口，前一个就绪后才启动下一个。IndexTTS 第一次加载模型可能要几分钟。
+脚本会按 IndexTTS → llama-server → ASR → LiveKit → token → Agent → 网页 的顺序，每个服务开一个窗口，前一个就绪后才启动下一个。已经在运行（端口在监听）的服务会直接跳过，不会重复启动。IndexTTS 第一次加载模型可能要几分钟。
 
 ### 4. 检查
 

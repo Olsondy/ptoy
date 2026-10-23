@@ -31,7 +31,10 @@ $Ptoy = @{
     LlamaTimeoutSec     = 300
 
     # ---- ASR (SenseVoice-Small, CPU) :8100 ----
+    # Name of the conda env that has services\asr installed (use your existing env if you already have one).
     AsrEnv              = 'ptoy-asr'
+    # Local SenseVoice model directory. '' = let funasr download iic/SenseVoiceSmall on first start.
+    AsrModel            = ''
     AsrPort             = 8100
     AsrTimeoutSec       = 300
 
