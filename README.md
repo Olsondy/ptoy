@@ -22,12 +22,17 @@ Copy-Item apps\agent\.env.example apps\agent\.env
 在 `apps\agent\.env` 里配置：
 
 ```ini
-LIVEKIT_SERVER_BIN=C:\livekit\livekit-server.exe   # 从 https://github.com/livekit/livekit/releases 下载
-ASR_URL=http://127.0.0.1:8001                      # 模型服务地址
+# livekit-server.exe 的完整路径，从 https://github.com/livekit/livekit/releases 下载
+LIVEKIT_SERVER_BIN=C:\livekit\livekit-server.exe
+# 模型服务地址
+ASR_URL=http://127.0.0.1:8001
 LLM_BASE_URL=http://127.0.0.1:8080/v1
 TTS_GRADIO_URL=http://127.0.0.1:7860
-TTS_REF_AUDIO=C:\path\to\ref.wav                   # 角色音色参考音频
+# 角色音色参考音频
+TTS_REF_AUDIO=C:\path\to\ref.wav
 ```
+
+注释要单独写一行，不要写在值的后面。
 
 需要从局域网其他设备访问时，用管理员 PowerShell 放行防火墙（只需一次）：
 

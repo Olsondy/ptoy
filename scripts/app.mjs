@@ -113,10 +113,9 @@ process.on('SIGTERM', () => stopAll(0));
 if (await portOpen(livekitPort, livekitUrl.hostname)) {
   log(`✓ LiveKit  已在 :${livekitPort} 运行，跳过启动`);
 } else {
-  const bin = env.LIVEKIT_SERVER_BIN;
-  if (!bin || !existsSync(bin)) {
-    fail('找不到 livekit-server：在 apps/agent/.env 里设置 LIVEKIT_SERVER_BIN=<livekit-server 可执行文件路径>');
-  }
+  const bin = (env.LIVEKIT_SERVER_BIN ?? '').trim().replace(/^["']|["']$/g, '');
+  if (!bin) fail('apps/agent/.env 里的 LIVEKIT_SERVER_BIN 是空的：填 livekit-server 可执行文件的完整路径');
+  if (!existsSync(bin)) fail(`LIVEKIT_SERVER_BIN 指向的文件不存在：${bin}`);
   const lkArgs = ['--dev', '--bind', '0.0.0.0', ...(env.LIVEKIT_NODE_IP ? ['--node-ip', env.LIVEKIT_NODE_IP] : [])];
   start('livekit', bin, lkArgs);
 }
