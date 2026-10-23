@@ -99,8 +99,9 @@ const conversationSchema = z.object({
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
   CHARACTER_PROMPT_FILE: z.string().min(1).default(DEFAULT_CHARACTER_PROMPT_FILE),
-  TTS_BACKEND: z.enum(['gradio']).default('gradio'),
+  TTS_BACKEND: z.enum(['gradio', 'fastapi']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
+  TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
   TTS_REF_AUDIO: z.string().min(1).optional(),
   TTS_LANGUAGE: z.enum(['ZH', 'EN', 'JA', 'AR', 'ES']).default('ZH'),
   TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('vector'),
@@ -140,8 +141,19 @@ export interface GradioTtsConfig {
   readonly timeoutMs: number;
 }
 
-/** One variant per backend; #14 adds `{ backend: 'fastapi', ... }`. */
-export type TtsConfig = GradioTtsConfig;
+/** IndexTTS FastAPI service (`services/tts`): reference audio, language and model settings live on the server. */
+export interface FastApiTtsConfig {
+  readonly backend: 'fastapi';
+  readonly url: string;
+  /** `reference`: no emotion sent (the server speaks like the reference); `vector`: the segment emotion is sent. */
+  readonly emotionControl: 'reference' | 'vector';
+  /** Emotion strength sent as `emo_alpha` in vector mode (0–1). */
+  readonly emotionWeight: number;
+  readonly timeoutMs: number;
+}
+
+/** One variant per backend (`TTS_BACKEND`). */
+export type TtsConfig = GradioTtsConfig | FastApiTtsConfig;
 
 export interface ConversationConfig extends CallConfig {
   readonly llm: LlmConfig;
@@ -156,11 +168,31 @@ export interface ConversationConfig extends CallConfig {
 export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): ConversationConfig {
   const parsed = conversationSchema.safeParse(env);
   const issues = parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
-  if (parsed.success && !parsed.data.TTS_REF_AUDIO) issues.push('TTS_REF_AUDIO: required (speaker reference wav)');
+  if (parsed.success && parsed.data.TTS_BACKEND === 'gradio' && !parsed.data.TTS_REF_AUDIO) {
+    issues.push('TTS_REF_AUDIO: required with TTS_BACKEND=gradio (speaker reference wav)');
+  }
   if (!parsed.success || issues.length > 0) {
     throw new Error(`Invalid conversation pipeline env (see apps/agent/.env.example): ${issues.join('; ')}`);
   }
   const e = parsed.data;
+  const tts: TtsConfig =
+    e.TTS_BACKEND === 'fastapi'
+      ? {
+          backend: 'fastapi',
+          url: e.TTS_FASTAPI_URL,
+          emotionControl: e.TTS_EMOTION_CONTROL,
+          emotionWeight: e.TTS_EMO_WEIGHT,
+          timeoutMs: e.TTS_TIMEOUT_MS,
+        }
+      : {
+          backend: 'gradio',
+          url: e.TTS_GRADIO_URL,
+          refAudioPath: e.TTS_REF_AUDIO as string,
+          language: e.TTS_LANGUAGE,
+          emotionControl: e.TTS_EMOTION_CONTROL,
+          emotionWeight: e.TTS_EMO_WEIGHT,
+          timeoutMs: e.TTS_TIMEOUT_MS,
+        };
   return {
     ...loadCallConfig(env),
     llm: {
@@ -172,15 +204,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       timeoutMs: e.LLM_TIMEOUT_MS,
       maxRetry: e.LLM_MAX_RETRY,
     },
-    tts: {
-      backend: e.TTS_BACKEND,
-      url: e.TTS_GRADIO_URL,
-      refAudioPath: e.TTS_REF_AUDIO as string,
-      language: e.TTS_LANGUAGE,
-      emotionControl: e.TTS_EMOTION_CONTROL,
-      emotionWeight: e.TTS_EMO_WEIGHT,
-      timeoutMs: e.TTS_TIMEOUT_MS,
-    },
+    tts,
     characterPromptFile: e.CHARACTER_PROMPT_FILE,
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
     fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST } : undefined,

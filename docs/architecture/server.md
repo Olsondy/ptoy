@@ -46,7 +46,7 @@
 ┌─ Windows GPU 主机（16GB）────────────────────────────────┐
 │ ASR：SenseVoice-Small :8001（CPU） 输出文本 + 情绪/事件标签 │
 │ LLM：llama-server :8080 · Qwen3-8B Q5_K_M · 思考模式关闭    │
-│ TTS：IndexTTS2 · 阶段 1 用 Gradio :7860 / 阶段 2 用 FastAPI │
+│ TTS：IndexTTS2 · 阶段 1 Gradio :7860 / 阶段 2 FastAPI :8002 │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -96,6 +96,19 @@ llama-server -m Qwen3-8B-Q5_K_M.gguf --alias qwen3-8b --host 0.0.0.0 --port 8080
 - 唯一的瓶颈是第一句的延迟，它取决于第一句的长度
 - 从 Mac 经 Wi-Fi 调用时，每次都要上传 1.9MB 参考音频，固定开销膨胀到约 4s。所以压测要以 Windows 本机的数据为准
 
+### TTS FastAPI 服务实测（#14，待 Windows 本机复测）
+
+`services/tts/bench.py`（合成耗时 vs 字数、取消、显存）和 `bench/bench_gpu.py --tts-fastapi-url`（与 LLM 并发）。数据回填前，延迟预算仍按 Gradio 模型计算。
+
+| 指标 | Gradio（上表） | FastAPI 默认（25 步） | FastAPI 降步数（`TTS_DIFFUSION_STEPS=?`） |
+|---|---|---|---|
+| 耗时拟合：固定开销 + 每字 | 770ms + 89ms/字 | 待测 | 待测 |
+| 短句（13 字）合成 / RTF | 1929ms / 0.66 | 待测 | 待测 |
+| LLM 并发时短句合成 | 2253ms | 待测 | — |
+| 取消 → GPU 空闲 | 不能取消，跑完为止 | 待测 | — |
+| 显存峰值（整卡，含 LLM） | 13.8 / 16GB | 待测（不加载 QwenEmotion，预计更低） | — |
+| 音质（试听 `--save-wavs`） | 基准 | 基准 | 待评 |
+
 ## 7. 延迟预算
 
 ```
@@ -112,6 +125,13 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 - **阶段 1**：TTS 直接调用 Gradio `/gen_single`，先跑通整条链路和整体体验
 - **阶段 2**：IndexTTS 封装成 FastAPI 服务，**替代** WebUI（两者不能同时运行，否则会加载两份模型）。启动时缓存音色特征、开 FP16、降低扩散步数、直接返回 PCM、支持取消。预计节省约 0.5s
+  - 实现：`services/tts`（用法、环境变量、API 见其 README），Agent 侧 `TTS_BACKEND=fastapi` + `TTS_FASTAPI_URL`（`apps/agent/src/tts/fastapi.ts`），插件和 Agent 其余部分不变
+  - 模型：进程启动时按 WebUI `build_tts()` 的方式加载一次 IndexTTS2（默认 v2.5、半精度：v2.5 为 BF16，v2 为 FP16；不加载 QwenEmotion，我们只用情感向量），再用固定的参考音频路径预热一次。之后每个请求都传同一个路径，命中 IndexTTS2 按路径缓存的音色条件（spk_cond / s2mel style / prompt）
+  - 调用：`tts.infer(...)` 的参数按 `inspect.signature` 过滤（这个非官方版本不接受的参数告警后丢弃）；预热时试 `output_path=None`，能拿到 `(采样率, 数组)` 就内存返回，否则写临时 wav 再读。采样参数默认同 WebUI，可用环境变量改
+  - 接口：`POST /tts { text, emotion?, emotion_vector?, emo_alpha?, request_id? }` → s16le 单声道 PCM（`X-Sample-Rate`），`POST /cancel/{id}`，`GET /health`。情绪名映射为 one-hot 向量再经 `normalize_emo_vec`，`平静` 跟随参考音频
+  - 串行与取消：单工作线程逐个合成。取消排队中的请求直接移除；取消进行中的请求丢弃结果，并借 IndexTTS2 的 `gr_progress` 进度回调在下一个阶段边界中止；客户端断开也算取消。Agent 在打断和超时时调用 `/cancel`
+  - 扩散步数：上游 `infer` 内部写死 25 步、CFG 0.7。`TTS_DIFFUSION_STEPS` / `TTS_CFG_RATE` 优先作为 `infer` 参数传入，否则替换 `s2mel.models['cfm'].inference` 的 `n_timesteps` / `inference_cfg_rate`；都不存在时告警并保持原值（`/health` 的 `diffusion.via` 显示实际方式）
+  - 实测数据见 §6「TTS FastAPI 服务实测」
 
 ### Segmenter 规则
 - 第一段在第一个逗号处就切，4–8 个字
@@ -137,13 +157,13 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 应用（LiveKit、token 服务、Agent、网页）用仓库根目录的 `pnpm app` 一条命令启动，见 `README.md`。模型服务由用户自行维护，应用只通过 `apps/agent/.env` 里配置的地址连接它们。
 
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
-- 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860、8080、8001（ASR）
+- 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860（WebUI）或 8002（TTS FastAPI）、8080、8001（ASR）
 - 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS（例如反向代理），目前未提供
 
 ## 10. 待定事项
 
-- IndexTTS 安装的是非官方版本（带语言选择、预设、术语表），阶段 2 需要阅读它的 `webui.py`，找到底层推理调用方式
-- 扩散步数降低后音质和速度的取舍，需要实测
+- IndexTTS 安装的是非官方版本（带语言选择、预设、术语表）。已按它的 `webui.py` 实现阶段 2；`infer` 是否支持 `output_path=None`、是否有扩散步数参数、`gr_progress` 回调位置，以服务启动日志打印的签名为准（#14）
+- 扩散步数降低后音质和速度的取舍，需要实测（§6「TTS FastAPI 服务实测」）
 - 轮次检测模型对中文的效果，需要实测
 
 ## 11. 轮次检测与 STT 插件（M1 #8 实测）
@@ -178,9 +198,9 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 **链路**（`AGENT_PIPELINE=conversation`，默认；`apps/agent/src/pipelines/conversation.ts`）：§11 的 VAD + STT → LLM（`@livekit/agents-plugin-openai`，`baseURL` 指向 llama-server，`max_completion_tokens=150`）→ TTS 插件 `IndexTTS`（`apps/agent/src/tts/`）→ Agent 音轨（24kHz）。角色 system prompt 在 `apps/agent/prompts/character.md`，改文件即可，不用改代码。
 
-- **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。当前只有 `gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。返回的 22.05kHz wav 解码后重采样到音轨采样率。#14 的 FastAPI 后端实现同一接口、在 `createTtsBackend` 里加一个分支即可。
+- **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。`fastapi` 见 §8 阶段 2；`gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。返回的 22.05kHz wav 解码后重采样到音轨采样率。
 - **分段**：插件的 `stream()` 把 LLM 文本流交给 `@ptoy/segmenter`（§8 规则，默认阈值：首段在第一个逗号处切），每段一个 `synthesizeSegment({ text, emotion })` 请求；请求在插件内串行（GPU 共享），不重试。Segmenter 是切分和情绪标签解析的唯一实现。
-- **取消**：打断或会话结束时中止请求、丢弃结果。Gradio 的 `/call` 接口不能取消已排队的任务，被取消的句子仍会在 GPU 上跑完。
+- **取消**：打断或会话结束时中止请求、丢弃结果。Gradio 的 `/call` 接口不能取消已排队的任务，被取消的句子仍会在 GPU 上跑完；FastAPI 后端会调用 `/cancel/{id}`，服务端移除排队任务或中止进行中的合成。
 - **字幕**：用框架内置的播放同步（TTS 对齐的段级时间戳：每段的干净文本挂在该段第一帧上 + 按字速推进），字幕和写入历史的回复都来自这些段文本。框架按空白切词，中文整句会被当成一个词一次性放出，所以 `transcriptionNode` 在每个中日文字符后插入 U+FEFF（会被当作空白、但不显示），字幕就能逐字跟随播放；写入对话历史前会去掉，网页显示前也会去掉。
 - **标签**：LLM 输出里的 `[...]` / `【...】` 由 Segmenter 解析（合法情绪传给 TTS，非法丢弃），不进 TTS 文本、字幕和对话历史。LLM 看到的历史里没有标签，模型持续输出标签靠 system prompt 约束。
 - **情绪链路**（#13，细节和实测见 `docs/architecture/emotion-pipeline.md`）：`CharacterAgent.llmNode` 只在发给 LLM 的那份上下文里给正在回答的用户消息加 `[用户语气:X]`（`apps/agent/src/emotion/user-tone.ts`，平静不加），历史、字幕和框架的抢先生成都用原文；TTS 默认 `TTS_EMOTION_CONTROL=vector`，非平静句子发 one-hot 情绪向量（`TTS_EMO_WEIGHT=0.8`），平静句子用参考音频。

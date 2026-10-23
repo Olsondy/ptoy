@@ -34,6 +34,28 @@ TTS_REF_AUDIO=C:\path\to\ref.wav
 
 注释要单独写一行，不要写在值的后面。
 
+### TTS 用 FastAPI 服务（替代 WebUI）
+
+`services/tts` 把 IndexTTS 封装成常驻服务，省掉 WebUI 每句约 0.77s 的固定开销，打断时能取消合成。它和 WebUI 不能同时运行（显存不够）。
+
+1. 关掉 IndexTTS WebUI。
+2. 在 IndexTTS 的 conda 环境里，从仓库根目录启动（详细配置见 [services/tts/README.md](services/tts/README.md)）：
+
+   ```powershell
+   $env:INDEXTTS_DIR = "D:\index-tts"
+   $env:TTS_REF_AUDIO = "C:\path\to\ref.wav"
+   python services\tts\server.py
+   ```
+
+3. `apps\agent\.env` 里切换后端（`TTS_REF_AUDIO` 此时由服务端使用，Agent 不再需要）：
+
+   ```ini
+   TTS_BACKEND=fastapi
+   TTS_FASTAPI_URL=http://127.0.0.1:8002
+   ```
+
+换回 WebUI：停掉服务、启动 WebUI，把 `TTS_BACKEND` 改回 `gradio`。
+
 需要从局域网其他设备访问时，用管理员 PowerShell 放行防火墙（只需一次）：
 
 ```powershell
