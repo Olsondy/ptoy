@@ -96,6 +96,8 @@ const cleanups: (() => Promise<void> | void)[] = [];
 
 async function main(): Promise<number> {
   const env: NodeJS.ProcessEnv = { ...process.env, AGENT_PIPELINE: 'conversation', LIVEKIT_AGENT_NAME: '' };
+  // The barge-in check interrupts the filler of the turn before: that turn must not skip it.
+  if (bargeInMs !== undefined) env.FILLERS_ALWAYS = 'true';
   const scratch = mkdtempSync(join(tmpdir(), 'ptoy-sim-'));
   cleanups.push(() => rmSync(scratch, { recursive: true, force: true }));
 

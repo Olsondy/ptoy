@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import { toFrames } from '../tts/plugin.js';
 import { decodeWav } from '../tts/wav.js';
-import { FILLER_GROUPS, type FillerGroup, FillerPicker, chooseFillerGroup } from './choice.js';
+import { FILLER_GROUPS, type FillerGroup, FillerPicker, chooseFillerGroup, fillerPlayChance } from './choice.js';
 
 const entrySchema = z.object({
   id: z.string().min(1),
@@ -31,22 +31,34 @@ export interface Filler {
 
 /**
  * The pre-recorded fillers, decoded and resampled to the agent track rate once per process.
- * `next(transcript, emotion)` picks the one to play for a finished user turn.
+ * `next(transcript, emotion)` picks the one to play for a finished user turn, or none.
  */
 export class FillerBank {
   readonly fillers: readonly Filler[];
   readonly #picker: FillerPicker<Filler>;
+  readonly #random: () => number;
+  /** Group played on the previous turn (`undefined` when that turn had no filler). */
+  #lastGroup: FillerGroup | undefined;
 
-  constructor(fillers: readonly Filler[], random?: () => number) {
+  /** `always`: every turn gets a filler (testing); otherwise turns are skipped by chance. */
+  constructor(fillers: readonly Filler[], random: () => number = Math.random, always = false) {
     this.fillers = fillers;
+    this.#random = always ? () => 0 : random;
     const groups = new Map<FillerGroup, Filler[]>();
     for (const f of fillers) groups.set(f.group, [...(groups.get(f.group) ?? []), f]);
     this.#picker = new FillerPicker(groups, random);
   }
 
-  /** Group by {@link chooseFillerGroup}, never the filler of the previous turn. */
+  /**
+   * Group by {@link chooseFillerGroup}, skipped by chance ({@link fillerPlayChance}), never the
+   * filler of the previous turn. `undefined` = this turn gets no filler.
+   */
   next(transcript: string, asrEmotion?: string): Filler | undefined {
-    return this.#picker.pick(chooseFillerGroup(transcript, asrEmotion));
+    const group = chooseFillerGroup(transcript, asrEmotion);
+    const play = this.#random() < fillerPlayChance(group, this.#lastGroup);
+    const filler = play ? this.#picker.pick(group) : undefined;
+    this.#lastGroup = filler && group;
+    return filler;
   }
 }
 
@@ -67,19 +79,22 @@ export function fillerAudio(filler: Filler): ReadableStream<AudioFrame> {
 
 const cache = new Map<string, Promise<FillerBank>>();
 
-/** Loads (once per manifest path and rate) every filler of the manifest; throws on a bad manifest or wav. */
-export function loadFillerBank(manifestPath: string, sampleRate: number): Promise<FillerBank> {
-  const key = `${resolve(manifestPath)}@${sampleRate}`;
+/**
+ * Loads (once per manifest path, rate and `always`) every filler of the manifest; throws on a bad
+ * manifest or wav. `always`: see {@link FillerBank}.
+ */
+export function loadFillerBank(manifestPath: string, sampleRate: number, always = false): Promise<FillerBank> {
+  const key = `${resolve(manifestPath)}@${sampleRate}${always ? ':always' : ''}`;
   let bank = cache.get(key);
   if (!bank) {
-    bank = readFillerBank(manifestPath, sampleRate);
+    bank = readFillerBank(manifestPath, sampleRate, always);
     bank.catch(() => cache.delete(key));
     cache.set(key, bank);
   }
   return bank;
 }
 
-async function readFillerBank(manifestPath: string, sampleRate: number): Promise<FillerBank> {
+async function readFillerBank(manifestPath: string, sampleRate: number, always: boolean): Promise<FillerBank> {
   let manifest: z.infer<typeof manifestSchema>;
   try {
     manifest = manifestSchema.parse(JSON.parse(await readFile(manifestPath, 'utf8')));
@@ -108,5 +123,5 @@ async function readFillerBank(manifestPath: string, sampleRate: number): Promise
     }
   }
   if (fillers.length === 0) throw new Error(`Filler manifest ${manifestPath} has no fillers`);
-  return new FillerBank(fillers);
+  return new FillerBank(fillers, Math.random, always);
 }

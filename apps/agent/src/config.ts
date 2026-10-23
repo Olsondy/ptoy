@@ -138,6 +138,10 @@ const conversationSchema = charactersSchema.extend({
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
   FILLERS_MANIFEST: z.string().min(1).default(DEFAULT_FILLERS_MANIFEST),
+  FILLERS_ALWAYS: z
+    .enum(['true', 'false', '1', '0'])
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
 });
 
 export interface LlmConfig {
@@ -187,7 +191,11 @@ export interface ConversationConfig extends CallConfig {
   /** Sample rate of the agent's published audio track; TTS output is resampled to it. */
   readonly audioSampleRate: number;
   /** Play a pre-recorded filler when a user turn ends (`undefined` = disabled). */
-  readonly fillers?: { readonly manifestPath: string };
+  readonly fillers?: {
+    readonly manifestPath: string;
+    /** Every turn gets a filler (no chance-based skipping); `sim:call --barge-in` relies on it. */
+    readonly always: boolean;
+  };
 }
 
 export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): ConversationConfig {
@@ -232,6 +240,6 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     tts,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
-    fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST } : undefined,
+    fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST, always: e.FILLERS_ALWAYS } : undefined,
   };
 }
