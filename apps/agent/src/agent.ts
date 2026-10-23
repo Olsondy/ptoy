@@ -1,18 +1,24 @@
 import { type JobContext, ServerOptions, cli, defineAgent, log } from '@livekit/agents';
 import { RoomEvent, type RemoteParticipant } from '@livekit/rtc-node';
 import { fileURLToPath } from 'node:url';
+import { conversationPipeline } from './pipelines/conversation.js';
 import { echoPipeline } from './pipelines/echo.js';
 import { transcribePipeline } from './pipelines/transcribe.js';
 import type { CallPipeline } from './pipelines/types.js';
 
 /**
  * `AGENT_PIPELINE` selects what the agent does in a call:
- * `transcribe` (default, M1 #8: VAD + STT → user subtitles; #10 adds LLM/TTS) or
+ * `conversation` (default, M1 #10: VAD + STT → LLM → TTS, both subtitles),
+ * `transcribe` (M1 #8: VAD + STT → user subtitles only) or
  * `echo` (M0 loopback, used by the smoke test and to check the WebRTC path without any model).
  */
-const PIPELINES: Readonly<Record<string, CallPipeline>> = { echo: echoPipeline, transcribe: transcribePipeline };
+const PIPELINES: Readonly<Record<string, CallPipeline>> = {
+  conversation: conversationPipeline,
+  echo: echoPipeline,
+  transcribe: transcribePipeline,
+};
 
-function selectPipeline(name = process.env.AGENT_PIPELINE || 'transcribe'): CallPipeline {
+function selectPipeline(name = process.env.AGENT_PIPELINE || 'conversation'): CallPipeline {
   const pipeline = PIPELINES[name];
   if (!pipeline) {
     throw new Error(`Unknown AGENT_PIPELINE "${name}" (expected: ${Object.keys(PIPELINES).join(' | ')})`);

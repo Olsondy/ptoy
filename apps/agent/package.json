@@ -9,13 +9,16 @@
     "dev:token": "tsx watch --env-file-if-exists=.env src/token-server.ts",
     "start:token": "tsx --env-file-if-exists=.env src/token-server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sim:call": "tsx --env-file-if-exists=.env scripts/sim-call.ts"
   },
   "dependencies": {
     "@livekit/agents": "^1.9.3",
+    "@livekit/agents-plugin-openai": "1.9.3",
     "@livekit/rtc-node": "^1.2.1",
     "livekit-server-sdk": "^2.19.2",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@ptoy/segmenter": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
