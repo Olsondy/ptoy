@@ -164,9 +164,9 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - **阶段 1**：TTS 直接调用 Gradio `/gen_single`，先跑通整条链路和整体体验
 - **阶段 2**：IndexTTS 封装成 FastAPI 服务，**替代** WebUI（两者不能同时运行，否则会加载两份模型）。启动时缓存音色特征、开半精度、直接返回 PCM、支持取消。原先预计能省掉约 0.5s 的 Gradio 开销，实测固定开销主要在模型本身（§6），延迟要靠加速选项和降扩散步数
   - 实现：`services/tts`（用法、环境变量、API 见其 README），Agent 侧 `TTS_BACKEND=fastapi` + `TTS_FASTAPI_URL`（`apps/agent/src/tts/fastapi.ts`），插件和 Agent 其余部分不变
-  - 模型：进程启动时按 WebUI `build_tts()` 的方式加载一次 IndexTTS2（默认 v2.5、半精度：v2.5 为 BF16，v2 为 FP16；不加载 QwenEmotion，我们只用情感向量），再用固定的参考音频路径预热一次。之后每个请求都传同一个路径，命中 IndexTTS2 按路径缓存的音色条件（spk_cond / s2mel style / prompt）
+  - 模型：进程启动时按 WebUI `build_tts()` 的方式加载一次 IndexTTS2（默认 v2.5、半精度：v2.5 为 BF16，v2 为 FP16；不加载 QwenEmotion，我们只用情感向量），再用默认音色预热一次。音色是 `TTS_VOICES_DIR` 里的 `<id>.wav`（ADR 0008），每个音色固定一个路径；IndexTTS2 只按路径缓存最近一个音色的条件（spk_cond / s2mel style / prompt），同一音色的请求都命中缓存，换音色后第一句重新提取，Agent 在通话开始时用 `/warm` 提前做掉
   - 调用：`tts.infer(...)` 的参数按 `inspect.signature` 过滤（这个非官方版本不接受的参数告警后丢弃）；预热时试 `output_path=None`，能拿到 `(采样率, 数组)` 就内存返回，否则写临时 wav 再读。采样参数默认同 WebUI，可用环境变量改
-  - 接口：`POST /tts { text, emotion?, emotion_vector?, emo_alpha?, request_id? }` → s16le 单声道 PCM（`X-Sample-Rate`），`POST /cancel/{id}`，`GET /health`。情绪名映射为 one-hot 向量再经 `normalize_emo_vec`，`平静` 跟随参考音频
+  - 接口：`POST /tts { text, voice?, emotion?, emotion_vector?, emo_alpha?, request_id? }` → s16le 单声道 PCM（`X-Sample-Rate`），`POST /warm { voice }`，`POST /cancel/{id}`，`GET /health`。情绪名映射为 one-hot 向量再经 `normalize_emo_vec`，`平静` 跟随参考音频
   - 串行与取消：单工作线程逐个合成。取消排队中的请求直接移除；取消进行中的请求丢弃结果，并借 IndexTTS2 的 `gr_progress` 进度回调在下一个阶段边界中止；客户端断开也算取消。Agent 在打断和超时时调用 `/cancel`
   - 扩散步数：上游 `infer` 内部写死 25 步、CFG 0.7。`TTS_DIFFUSION_STEPS` / `TTS_CFG_RATE` 优先作为 `infer` 参数传入，否则替换 `s2mel.models['cfm'].inference` 的 `n_timesteps` / `inference_cfg_rate`；都不存在时告警并保持原值（`/health` 的 `diffusion.via` 显示实际方式）
   - 实测数据见 §6「TTS FastAPI 服务实测」
@@ -179,15 +179,15 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
   - 首段：遇到第一个 `，、,` 或句末标点即切；实义字符少于 2 个（如“嗯，”）不切，并入下一小句（单字段落要付 770ms 固定开销，且语气词已覆盖开口）；12 字内无标点则强制切
   - 后续：按 `。！？；…!?;` 和换行切；超过 40 字仍无句末标点时，优先切在窗口内最后一个逗号，否则硬切（40 字约 4.3s 合成，字幕一行可读）
   - 标点后的连续标点和右引号（`？！`、`。”`）跟随前句，为此最多多等 1 个 token；ASCII `.` `,` 夹在数字之间（`3.14`、`1,000`）不切
-  - 情绪按句生效：没有自己标签的句子为平静（可选 `emotionScope: "untilNextTag"` 沿用上一个标签）；标签本身也是分段边界；句中换情绪时先切出已缓冲文本
+  - 情绪按句生效：没有自己标签的句子为平静（可选 `emotionScope: "untilNextTag"` 沿用上一个标签；`"reply"` 整段回复都用第一个标签，Agent 用这个）；标签本身也是分段边界；句中换情绪时先切出已缓冲文本
   - `[`/`【` 在 10 字内闭合即视为标签：合法取对应情绪，非法（如 `[开心]`、`[用户语气:喜]`）丢弃并按平静；10 字内未闭合按普通文本保留；回复结束时残留的半个标签丢弃
   - 切分按字素进行，不会拆开 emoji / 代理对；输出去首尾空白，不含实义字符的段不输出
   - `reset()` 丢弃缓冲和半个标签并恢复首段规则；`end()` 冲刷剩余文本后同样复位
   - 情绪 → IndexTTS2 情绪向量下标：喜 0、怒 1、哀 2、惧 3、厌恶 4、低落 5、惊喜 6、平静 7（`EMOTION_VECTOR_INDEX` / `emotionVector()`）
 
 ### 预录语气词
-- 用同一个音色预先合成 5–10 条（“嗯…”“好的，”“我想想”等），按场景选用，避免每句都用而显得机械
-- 生成器在 `services/fillers/`，产物（48kHz 单声道 16-bit WAV + `manifest.json`）在 `assets/fillers/`；换音色后重新运行生成器即可
+- 每个音色预先合成 5–10 条（“嗯…”“好的，”“我想想”等），按场景选用，避免每句都用而显得机械
+- 生成器在 `services/fillers/`，产物（48kHz 单声道 16-bit WAV + `manifest.json`）按音色放在 `assets/fillers/<voice>/`（ADR 0008）；新增或更换音色后用 `--voice <id>` 重新生成
 - 接入方式见 §12「语气词」
 
 ## 9. 运维注意
@@ -274,13 +274,13 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 **链路**（`AGENT_PIPELINE=conversation`，默认；`apps/agent/src/pipelines/conversation.ts`）：§11 的 VAD + STT → LLM（`@livekit/agents-plugin-openai`，`baseURL` 指向 llama-server，`max_completion_tokens=220`）→ TTS 插件 `IndexTTS`（`apps/agent/src/tts/`）→ Agent 音轨（24kHz）。角色 system prompt 在 `apps/agent/prompts/characters/`：每个角色一个 `<id>.md`（人设）+ 共用的 `_rules.md`（通话规则和情绪标签），改文件即可，不用改代码，下一通电话生效。页面拨号前选角色（`GET /api/characters` 列出），经 `POST /api/token` 写进来电者属性 `ptoy.character`，Agent 入房时读取（ADR 0007）。
 
-- **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。`fastapi` 见 §8 阶段 2；`gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。返回的 22.05kHz wav 解码后重采样到音轨采样率。
+- **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。`fastapi` 见 §8 阶段 2；`gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。Gradio 后端只有这一个参考音频，不支持按角色切换音色。返回的 22.05kHz wav 解码后重采样到音轨采样率。
 - **分段**：插件的 `stream()` 把 LLM 文本流交给 `@ptoy/segmenter`（§8 规则，默认阈值：首段在第一个逗号处切），每段一个 `synthesizeSegment({ text, emotion })` 请求；请求在插件内串行（GPU 共享），不重试。Segmenter 是切分和情绪标签解析的唯一实现。
 - **取消**：打断或会话结束时中止请求、丢弃结果。Gradio 的 `/call` 接口不能取消已排队的任务，被取消的句子仍会在 GPU 上跑完；FastAPI 后端会调用 `/cancel/{id}`，服务端移除排队任务或中止进行中的合成。
 - **字幕**：用框架内置的播放同步（TTS 对齐的段级时间戳：每段的干净文本挂在该段第一帧上 + 按字速推进），字幕和写入历史的回复都来自这些段文本。框架按空白切词，中文整句会被当成一个词一次性放出，所以 `transcriptionNode` 在每个中日文字符后插入 U+FEFF（会被当作空白、但不显示），字幕就能逐字跟随播放；写入对话历史前会去掉，网页显示前也会去掉。
 - **标签**：LLM 输出里的 `[...]` / `【...】` 由 Segmenter 解析（合法情绪传给 TTS，非法丢弃），不进 TTS 文本、字幕和对话历史。LLM 看到的历史里没有标签，模型持续输出标签靠 system prompt 约束。
-- **情绪链路**（#13，细节和实测见 `docs/architecture/emotion-pipeline.md`）：`CharacterAgent.llmNode` 只在发给 LLM 的那份上下文里给正在回答的用户消息加 `[用户语气:X]`（`apps/agent/src/emotion/user-tone.ts`，平静不加），历史、字幕和框架的抢先生成都用原文；TTS 默认 `TTS_EMOTION_CONTROL=vector`，非平静句子发 one-hot 情绪向量（`TTS_EMO_WEIGHT=0.8`），平静句子用参考音频。
-- **语气词**（#11，`apps/agent/src/fillers/`）：`FILLERS_ENABLED`（默认开）、`FILLERS_MANIFEST`（默认仓库的 `assets/fillers/manifest.json`）。每个进程加载一次并重采样到音轨采样率。用户一轮结束（`onUserTurnCompleted`，即 EOU 时刻）就用 `session.say('', { audio, addToChatCtx: false })` 排一条语气词在正式回复之前；回复的 LLM/TTS 同时开始，播放在框架的 speech 队列里排在语气词之后，所以不会重叠：回复先好就等语气词放完，语气词先放完就静音等回复。不是每轮都播（`apps/agent/src/fillers/choice.ts`）：明确的诉苦词才用共情组（“啊，这样啊”），ASR 的负面情绪只对陈述句生效；6 字以内的寒暄问句用应答组而不是“让我想想啊”；应答组只在一半的轮次播，和上一轮同组时概率再减半。`FILLERS_ALWAYS=true` 恢复每轮都播（`sim:call --barge-in` 用它）。
+- **情绪链路**（#13，细节和实测见 `docs/architecture/emotion-pipeline.md`）：`CharacterAgent.llmNode` 只在发给 LLM 的那份上下文里给正在回答的用户消息加 `[用户语气:X]`（`apps/agent/src/emotion/user-tone.ts`，平静不加），历史、字幕和框架的抢先生成都用原文；TTS 默认 `TTS_EMOTION_CONTROL=vector`，非平静句子发 one-hot 情绪向量（`TTS_EMO_WEIGHT=0.6`），平静句子用参考音频；整段回复只用第一个标签的情绪。
+- **语气词**（#11，`apps/agent/src/fillers/`）：`FILLERS_ENABLED`（默认开）、`FILLERS_DIR`（默认仓库的 `assets/fillers`）。每通电话加载角色音色的 `<voice>/manifest.json`（每个音色每个进程只解码一次）并重采样到音轨采样率；这个音色没有语气词时这通电话不播。用户一轮结束（`onUserTurnCompleted`，即 EOU 时刻）就用 `session.say('', { audio, addToChatCtx: false })` 排一条语气词在正式回复之前；回复的 LLM/TTS 同时开始，播放在框架的 speech 队列里排在语气词之后，所以不会重叠：回复先好就等语气词放完，语气词先放完就静音等回复。不是每轮都播（`apps/agent/src/fillers/choice.ts`）：明确的诉苦词才用共情组（“啊，这样啊”），ASR 的负面情绪只对陈述句生效；6 字以内的寒暄问句用应答组而不是“让我想想啊”；应答组只在一半的轮次播，和上一轮同组时概率再减半。`FILLERS_ALWAYS=true` 恢复每轮都播（`sim:call --barge-in` 用它）。
   - 选组（`chooseFillerGroup`，按用户最终文本 + SenseVoice 情绪）：负面情绪（sad/angry/fearful/disgusted）或倾诉词（累、难过、烦、唉…）→ `empathy`；请求（帮我、能不能、…好不好）→ `ack`；提问（？、句末吗/呢、什么/怎么/为什么…）→ `thinking`；其余 → `ack`。组内随机，绝不与上一轮同一条（组内只剩上一条时换 `ack` 或任意一条）。
   - 不进对话历史、不出字幕（文本为空）：LLM 不知道自己说过“好的，”，偶尔会在回复开头重复一次类似的话。
   - 打断：语气词是普通可打断的 speech，用户开口按框架规则暂停/停止（§11.1）。回复还没开播时用户说了新的话（有转写），排队的回复直接丢弃（`FillerTurnGuard`），否则它会在用户的停顿里冒出半句、随后被新一轮打断。回复已经开始播放时按普通打断处理。框架有 3s 的 AEC 预热，通话中 AI 的前 3s 语音不可打断。

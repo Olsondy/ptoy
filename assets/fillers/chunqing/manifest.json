@@ -4,6 +4,7 @@
   "channels": 1,
   "sample_format": "s16le",
   "voice": {
+    "id": "chunqing",
     "ref": "03-纯情闺蜜.wav",
     "ref_sha256": "493713b807eb482ab4b304f53fa65785e651a5a7f932ce5a6db17aeda3efb86f"
   },

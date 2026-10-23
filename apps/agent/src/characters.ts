@@ -19,6 +19,11 @@ export interface CharacterSummary {
 }
 
 export interface Character extends CharacterSummary {
+  /**
+   * TTS voice id: a speaker reference of `services/tts` (`<voice>.wav` in its `TTS_VOICES_DIR`)
+   * and the filler set `assets/fillers/<voice>/` (ADR 0008).
+   */
+  readonly voice: string;
   /** Full system prompt: the persona followed by the shared call rules. */
   readonly instructions: string;
 }
@@ -49,7 +54,7 @@ export class CharacterCatalog {
 
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
-/** `---\nname: …\ndescription: …\n---\n<persona>`; only flat `key: value` lines are supported. */
+/** `---\nname: …\ndescription: …\nvoice: …\n---\n<persona>`; only flat `key: value` lines are supported. */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
   const normalized = text.replace(/\r\n/g, '\n');
   const match = FRONT_MATTER.exec(normalized);
@@ -60,6 +65,8 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
   }
   const name = fields.get('name');
   if (!name) throw new Error(`Character "${id}" has no \`name:\` in its front matter`);
+  const voice = fields.get('voice');
+  if (!voice) throw new Error(`Character "${id}" has no \`voice:\` in its front matter`);
   const persona = normalized.slice(match?.[0].length ?? 0).trim();
   if (!persona) throw new Error(`Character "${id}" has an empty persona`);
   const shared = rules.replace(/\r\n/g, '\n').trim();
@@ -67,6 +74,7 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
     id,
     name,
     description: fields.get('description') ?? '',
+    voice,
     instructions: shared ? `${persona}\n\n${shared}` : persona,
   };
 }

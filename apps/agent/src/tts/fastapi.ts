@@ -5,6 +5,8 @@ import { type PcmAudio, type TtsBackend, TtsError, type TtsSegment } from './bac
 export interface IndexTtsFastApiOptions {
   /** Service base URL, e.g. `http://192.168.31.82:8002`. */
   readonly url: string;
+  /** Speaker reference id on the service (the character's voice); omitted → the service default. */
+  readonly voice?: string;
   /** `reference`: emotion follows the server's speaker reference; `vector`: the segment emotion is sent. */
   readonly emotionControl: 'reference' | 'vector';
   /** Emotion strength sent as `emo_alpha` with a non-calm emotion; omitted → the service default. */
@@ -24,7 +26,8 @@ const CANCEL_TIMEOUT_MS = 2000;
  * Every request carries a `request_id`. When the caller aborts (interruption) or the request
  * times out, the backend calls `POST /cancel/{id}` so the server drops the queued job or stops
  * and discards the running one, instead of occupying the GPU with audio nobody will hear.
- * The speaker reference, language and model settings are configured on the server.
+ * The speaker references, language and model settings are configured on the server; `voice`
+ * picks one, and `prewarm` (call start) loads it so the first reply does not pay for the switch.
  */
 export class IndexTtsFastApiBackend implements TtsBackend {
   readonly name = 'indextts-fastapi';
@@ -47,6 +50,18 @@ export class IndexTtsFastApiBackend implements TtsBackend {
         { model: body.model, sampleRate: body.sample_rate, outputMode: body.output_mode, diffusion: body.diffusion },
         'tts service ready',
       );
+      const voice = this.#opts.voice;
+      if (voice === undefined) return;
+      const started = Date.now();
+      const warm = await this.#fetch(`${this.#base}/warm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice }),
+        signal: AbortSignal.timeout(this.#opts.timeoutMs),
+      });
+      const result = (await warm.json()) as Record<string, unknown>;
+      if (!warm.ok) throw new Error(`warming voice ${voice}: ${warm.status} ${String(result.detail ?? result.error)}`);
+      this.#logger.info({ voice, state: result.state, ms: Date.now() - started }, 'tts voice ready');
     } catch (error) {
       this.#logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'tts prewarm failed');
     }
@@ -57,6 +72,7 @@ export class IndexTtsFastApiBackend implements TtsBackend {
     const timeout = AbortSignal.timeout(this.#opts.timeoutMs);
     const combined = AbortSignal.any([signal, timeout]);
     const body: Record<string, unknown> = { text: segment.text, request_id: requestId };
+    if (this.#opts.voice !== undefined) body.voice = this.#opts.voice;
     if (this.#opts.emotionControl === 'vector') {
       body.emotion = segment.emotion;
       if (this.#opts.emotionWeight !== undefined) body.emo_alpha = this.#opts.emotionWeight;

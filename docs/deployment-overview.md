@@ -99,7 +99,7 @@ LLM_API_KEY=no-key
 TTS_BACKEND=fastapi
 TTS_FASTAPI_URL=http://127.0.0.1:8002
 TTS_EMOTION_CONTROL=vector
-TTS_EMO_WEIGHT=0.8
+TTS_EMO_WEIGHT=0.6
 ```
 
 改用 WebUI 时把 TTS 部分换成：
@@ -110,7 +110,7 @@ TTS_GRADIO_URL=http://127.0.0.1:7860
 TTS_REF_AUDIO=D:/Development/IndexTTS/prompts/vo-10s.wav
 TTS_LANGUAGE=ZH
 TTS_EMOTION_CONTROL=vector
-TTS_EMO_WEIGHT=0.8
+TTS_EMO_WEIGHT=0.6
 ```
 
 把 `LIVEKIT_SERVER_BIN` 改为实际安装路径。`devkey/secret` 对应本地 `livekit-server --dev`，已有独立 LiveKit 时使用与其一致的连接配置。注释独占一行，不放在值后面。完整可选项见 [环境变量示例](../apps/agent/.env.example)。
@@ -118,7 +118,7 @@ TTS_EMO_WEIGHT=0.8
 连接时容易混淆的几处：
 
 - `LLM_BASE_URL` 带 `/v1`；ASR 和 TTS 的 URL 填服务根地址，Agent 会追加接口路径。
-- 参考音频：用 API 服务时只在服务端配置（入口脚本里的 `TTS_REF_AUDIO`），Agent 不需要。用 WebUI 时，Agent 的 `TTS_REF_AUDIO` 必须是 **Agent 所在机器可读取的文件**，Agent 会自行上传并缓存服务端路径；Agent 在 Mac 时使用 Mac 本地音频路径。
+- 参考音频：用 API 服务时只在服务端配置（入口脚本里的 `TTS_VOICES_DIR`，每个音色一个 `<id>.wav`），Agent 按角色文件的 `voice:` 传 id，对不上时 TTS 返回 `422 unknown_voice`。用 WebUI 时，Agent 的 `TTS_REF_AUDIO` 必须是 **Agent 所在机器可读取的文件**，Agent 会自行上传并缓存服务端路径；Agent 在 Mac 时使用 Mac 本地音频路径。
 - `TTS_EMOTION_CONTROL=vector`（默认）按每句的情绪标签合成，`TTS_EMO_WEIGHT` 是强度；`reference` 跟随参考音频情绪。见 [情绪链路](architecture/emotion-pipeline.md)，不要把关闭 QwenEmotion 理解为关闭全部情绪控制。
 - `TURN_DETECTOR=transcript` 按识别文字判断是否说完：句子完整时静音 `ENDPOINTING_MIN_DELAY_MS` 后回复，结尾像没说完时最多等 `ENDPOINTING_MAX_DELAY_MS`。停顿稍长就被抢答时调大前者（如 1000）。
 - Agent 在 Mac 时，三个模型 URL 的 `127.0.0.1` 换成 Windows 的局域网 IP。`0.0.0.0` 是服务监听地址，不是客户端访问地址。

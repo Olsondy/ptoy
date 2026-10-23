@@ -1,4 +1,4 @@
-"""用角色音色批量合成预录语气词，产出 assets/fillers/*.wav 与 manifest.json。
+"""用角色音色批量合成预录语气词，产出 assets/fillers/<音色>/*.wav 与 manifest.json。
 
 用法见同目录 README.md。顺序逐条调用 IndexTTS WebUI 的 /gen_single（GPU 共享，不并发）。
 """
@@ -80,7 +80,7 @@ def load_entries(manifest_path):
     return {e["id"]: e for entries in manifest["groups"].values() for e in entries}
 
 
-def build_manifest(defs, entries, ref_path):
+def build_manifest(defs, entries, ref_path, voice):
     groups = {g: [] for g in defs["groups"]}
     for f in defs["fillers"]:  # 按定义文件的顺序输出
         if f["id"] in entries:
@@ -90,7 +90,7 @@ def build_manifest(defs, entries, ref_path):
         "sample_rate": audio.TARGET_RATE,
         "channels": 1,
         "sample_format": "s16le",
-        "voice": {"ref": Path(ref_path).name, "ref_sha256": sha256(ref_path)},
+        "voice": {"id": voice, "ref": Path(ref_path).name, "ref_sha256": sha256(ref_path)},
         "groups": groups,
     }
 
@@ -123,15 +123,17 @@ def main():
                         help="IndexTTS WebUI 地址（环境变量 INDEXTTS_URL）")
     parser.add_argument("--ref", default=os.environ.get("INDEXTTS_REF_AUDIO"),
                         help="角色音色参考音频（环境变量 INDEXTTS_REF_AUDIO）")
+    parser.add_argument("--voice", required=True,
+                        help="音色 id：与 TTS 服务 TTS_VOICES_DIR 里的 <音色>.wav、角色文件的 voice: 一致")
     parser.add_argument("--only", action="append", metavar="ID", help="只重新生成指定 id，可重复")
     parser.add_argument("--defs", default=str(DEFAULT_DEFS), help="语气词定义文件")
-    parser.add_argument("--out", default=str(DEFAULT_OUT), help="输出目录（音频 + manifest.json）")
+    parser.add_argument("--out", help="输出目录（音频 + manifest.json），默认 assets/fillers/<音色>")
     args = parser.parse_args()
     if not args.ref or not Path(args.ref).is_file():
         parser.error("需要用 --ref 或 INDEXTTS_REF_AUDIO 指定存在的参考音频")
 
     defs = load_defs(args.defs)
-    out_dir = Path(args.out)
+    out_dir = Path(args.out) if args.out else DEFAULT_OUT / args.voice
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / "manifest.json"
 
@@ -159,7 +161,7 @@ def main():
             if stale.name not in keep:
                 stale.unlink()
 
-    manifest = build_manifest(defs, entries, args.ref)
+    manifest = build_manifest(defs, entries, args.ref, args.voice)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"已写入 {manifest_path}")
 

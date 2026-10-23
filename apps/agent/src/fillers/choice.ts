@@ -1,4 +1,4 @@
-/** Filler groups of `assets/fillers/manifest.json` (services/fillers/README.md). */
+/** Filler groups of `assets/fillers/<voice>/manifest.json` (services/fillers/README.md). */
 export const FILLER_GROUPS = ['thinking', 'ack', 'empathy'] as const;
 export type FillerGroup = (typeof FILLER_GROUPS)[number];
 

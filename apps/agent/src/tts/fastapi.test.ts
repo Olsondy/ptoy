@@ -53,6 +53,20 @@ describe('IndexTTS FastAPI backend request', () => {
     expect(server.calls[0]).toEqual({ text: '你好呀。', request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
   });
 
+  it('asks for the character voice and warms it up front', async () => {
+    const { server, backend } = await setup({}, { voice: 'wenrou' });
+    await backend.prewarm();
+    expect(server.warms).toEqual(['wenrou']);
+    await backend.synthesize({ text: '你好呀。', emotion: '喜' }, never());
+    expect(server.calls[0]?.voice).toBe('wenrou');
+  });
+
+  it('without a voice leaves the choice to the service and warms nothing', async () => {
+    const { server, backend } = await setup();
+    await backend.prewarm();
+    expect(server.warms).toEqual([]);
+  });
+
   it('in vector mode sends the segment emotion', async () => {
     const { server, backend } = await setup({}, { emotionControl: 'vector' });
     await backend.synthesize({ text: '太好了！', emotion: '喜' }, never());
@@ -172,7 +186,7 @@ describe('TTS_BACKEND=fastapi config', () => {
       backend: 'fastapi',
       url: 'http://10.0.0.2:8002',
       emotionControl: 'vector',
-      emotionWeight: 0.8,
+      emotionWeight: 0.6,
       timeoutMs: 20000,
     });
     expect(createTtsBackend(config.tts).name).toBe('indextts-fastapi');

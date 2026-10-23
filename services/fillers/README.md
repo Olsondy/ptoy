@@ -3,20 +3,20 @@
 用角色音色经 IndexTTS WebUI（`/gen_single`）一次性合成语气词，用户说完后由 Agent 立即播放，掩盖正式回复的首句合成延迟（ADR 0006）。
 
 - 定义：`fillers.json`（`groups` 场景说明；`fillers` 每条 `id` / `group` / `text` / 可选 `emotion`）
-- 产物：仓库根目录 `assets/fillers/*.wav` + `assets/fillers/manifest.json`，随仓库提交，运行时不再合成
+- 产物：每个音色一套，`assets/fillers/<音色>/*.wav` + `manifest.json`，随仓库提交，运行时不再合成。音色 id 与 TTS 服务 `TTS_VOICES_DIR` 里的 `<音色>.wav`、角色文件的 `voice:` 一致（ADR 0008）；Agent 只播这通电话角色音色的那一套
 
 ## 生成
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r services/fillers/requirements.txt
 
-# 换角色音色后全量重新生成（会删掉定义里已不存在的旧 wav）
+# 新增音色或换了某个音色的参考音频后，全量生成这个音色（会删掉定义里已不存在的旧 wav）
 INDEXTTS_URL=http://192.168.31.82:7860 \
-INDEXTTS_REF_AUDIO=/path/to/character.wav \
-  .venv/bin/python services/fillers/generate.py
+INDEXTTS_REF_AUDIO=/path/to/chunqing.wav \
+  .venv/bin/python services/fillers/generate.py --voice chunqing
 
 # 只重做某几条（其余条目保留在 manifest 中）
-.venv/bin/python services/fillers/generate.py --tts-url http://... --ref /path/to/character.wav --only ack_hao_de --only thinking_en
+.venv/bin/python services/fillers/generate.py --voice chunqing --tts-url http://... --ref /path/to/chunqing.wav --only ack_hao_de --only thinking_en
 ```
 
 - 参考音频不要提交进仓库；manifest 里记录了它的文件名和 sha256，用来核对产物来自哪个音色
@@ -42,7 +42,7 @@ TTS 原始输出（IndexTTS2 为 22.05kHz）依次经过：
   "sample_rate": 48000,
   "channels": 1,
   "sample_format": "s16le",
-  "voice": { "ref": "character.wav", "ref_sha256": "..." },
+  "voice": { "id": "chunqing", "ref": "chunqing.wav", "ref_sha256": "..." },
   "groups": {
     "thinking": [
       { "id": "thinking_en", "text": "嗯…", "file": "thinking_en.wav", "duration_ms": 380, "sample_rate": 48000 }

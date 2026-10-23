@@ -14,7 +14,7 @@
 
 ## Consequences
 
-- 所有角色共用同一个音色（`TTS_REF_AUDIO` / `services/tts` 的参考音频）和同一套预录语气词，人设要写成这个声音能说的样子。按角色切换音色要让 TTS 服务支持按请求选参考音频、语气词按音色分组，届时另开 ADR。
+- ~~所有角色共用同一个音色和同一套预录语气词。~~ 已被 ADR 0008 取代：每个角色在 front matter 里声明 `voice:`，TTS 服务按请求选参考音频，语气词按音色分组。
 - 新增角色：在目录里放一个 `<id>.md` 即可，下一通电话生效，不用重启；`DEFAULT_CHARACTER`（默认 `xiaoyou`）是页面没选、或选的角色已被删掉时的兜底。
 - 改人设或通话规则后，用 `pnpm --filter @ptoy/agent emotion:compliance -- --character <id>` 在真实 LLM 上复测情绪标签遵守率。
 - 小悠的 prompt 拆分后内容不变，只是原来“说话方式”里的链路规则移到了 `_rules.md` 的“通话规则”标题下。

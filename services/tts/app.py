@@ -4,7 +4,8 @@ No torch / indextts imports here: the model sits behind the `Engine` protocol (r
 `engine.py`), so this module is unit-tested with a fake engine on any machine.
 
 API (see README.md):
-  POST /tts              {text, emotion?, emotion_vector?, emo_alpha?, generation?, request_id?} → s16le mono PCM
+  POST /tts              {text, voice?, emotion?, emotion_vector?, emo_alpha?, generation?, request_id?} → s16le mono PCM
+  POST /warm             {voice} load a voice's speaker conditioning ahead of the first /tts
   POST /cancel/{id}      drop a queued request / discard (and best-effort abort) a running one
   GET  /health           model info, queue state, VRAM
 """
@@ -31,12 +32,19 @@ log = logging.getLogger("ptoy.tts")
 EMOTIONS = ("喜", "怒", "哀", "惧", "厌恶", "低落", "惊喜", "平静")
 # 平静 means "speak like the speaker reference": no emotion vector at all.
 NEUTRAL = "平静"
+# What /warm synthesizes (and throws away) to load a voice.
+WARM_TEXT = "嗯，好的。"
 
 
 class Engine(Protocol):
     """What the service needs from the model. `synthesize` runs on the single worker thread."""
 
     sample_rate: int
+    # Speaker reference ids; a request without `voice` gets `default_voice`.
+    voices: list[str]
+    default_voice: str
+    # Voice of the last synthesis: the model caches that one's speaker conditioning only.
+    loaded_voice: Optional[str]
 
     def synthesize(
         self,
@@ -45,10 +53,12 @@ class Engine(Protocol):
         emo_alpha: float,
         should_abort: Callable[[], bool],
         generation: Optional[dict[str, Any]] = None,
+        voice: Optional[str] = None,
     ) -> np.ndarray:
         """Returns mono int16 PCM at `sample_rate`. May raise `SynthesisAborted` once `should_abort()` is true.
 
-        `generation` overrides the configured sampling parameters for this call only."""
+        `generation` overrides the configured sampling parameters for this call only;
+        `voice` picks the speaker reference (None = `default_voice`)."""
         ...
 
     def info(self) -> dict[str, Any]:
@@ -98,8 +108,12 @@ class GenerationOverrides(BaseModel):
     repetition_penalty: Optional[float] = Field(default=None, ge=1.0)
 
 
+VoiceId = Field(default=None, min_length=1, max_length=128)
+
+
 class TtsRequest(BaseModel):
     text: str = Field(min_length=1)
+    voice: Optional[str] = VoiceId
     emotion: Optional[Literal["喜", "怒", "哀", "惧", "厌恶", "低落", "惊喜", "平静"]] = None
     emotion_vector: Optional[list[float]] = Field(default=None, min_length=8, max_length=8)
     emo_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -128,16 +142,21 @@ class TtsRequest(BaseModel):
         return self
 
 
+class WarmRequest(BaseModel):
+    voice: str = Field(min_length=1, max_length=128)
+
+
 class Job:
     def __init__(
         self, job_id: str, text: str, emo_vector: Optional[list[float]], emo_alpha: float,
-        generation: Optional[dict[str, Any]] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
     ):
         self.id = job_id
         self.text = text
         self.emo_vector = emo_vector
         self.emo_alpha = emo_alpha
         self.generation = generation
+        self.voice = voice
         self.future: concurrent.futures.Future = concurrent.futures.Future()
         self.cancelled = threading.Event()
         self.state: Literal["queued", "running", "done"] = "queued"
@@ -244,7 +263,8 @@ class SynthesisQueue:
             result, error = None, None
             try:
                 result = self._engine.synthesize(
-                    job.text, job.emo_vector, job.emo_alpha, job.cancelled.is_set, generation=job.generation,
+                    job.text, job.emo_vector, job.emo_alpha, job.cancelled.is_set,
+                    generation=job.generation, voice=job.voice,
                 )
             except SynthesisAborted:
                 error = JobCancelled()
@@ -285,10 +305,14 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
     async def tts(body: TtsRequest, request: Request):
         if len(body.text) > max_text_chars:
             return _error(422, "text_too_long", f"text has {len(body.text)} chars, max {max_text_chars}")
+        if body.voice is not None and body.voice not in engine.voices:
+            return _error(422, "unknown_voice", f"voice {body.voice!r} not in {engine.voices}")
         job_id = body.request_id or uuid.uuid4().hex
         alpha = default_emo_alpha if body.emo_alpha is None else body.emo_alpha
         generation = body.generation.model_dump(exclude_none=True) if body.generation else None
-        job = Job(job_id, body.text, emotion_vector(body.emotion, body.emotion_vector), alpha, generation or None)
+        job = Job(
+            job_id, body.text, emotion_vector(body.emotion, body.emotion_vector), alpha, generation or None, body.voice,
+        )
         headers = {"X-Request-Id": job_id}
         try:
             fut = queue.submit(job)
@@ -317,9 +341,9 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
         synth_ms = (job.finished_at - job.started_at) * 1000 if job.started_at and job.finished_at else 0.0
         audio_ms = len(data) / 2 / engine.sample_rate * 1000
         log.info(
-            "synthesized %s: %d chars, emotion=%s, queue %.0f ms, synth %.0f ms, audio %.0f ms",
-            job_id, len(body.text), body.emotion or ("vector" if body.emotion_vector else "reference"),
-            queue_ms, synth_ms, audio_ms,
+            "synthesized %s: %d chars, voice=%s, emotion=%s, queue %.0f ms, synth %.0f ms, audio %.0f ms",
+            job_id, len(body.text), body.voice or engine.default_voice,
+            body.emotion or ("vector" if body.emotion_vector else "reference"), queue_ms, synth_ms, audio_ms,
         )
         headers.update(
             {
@@ -332,6 +356,29 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
             }
         )
         return Response(content=data, media_type="application/octet-stream", headers=headers)
+
+    @app.post("/warm")
+    async def warm(body: WarmRequest, request: Request):
+        """Loads the voice's speaker conditioning with a throwaway synthesis, so the call's first
+        reply does not pay for it. A no-op when the model already holds this voice."""
+        if body.voice not in engine.voices:
+            return _error(422, "unknown_voice", f"voice {body.voice!r} not in {engine.voices}")
+        if engine.loaded_voice == body.voice:
+            return {"voice": body.voice, "state": "loaded"}
+        job_id = f"warm-{uuid.uuid4().hex}"
+        try:
+            fut = queue.submit(Job(job_id, WARM_TEXT, None, default_emo_alpha, voice=body.voice))
+        except QueueFull:
+            return _error(503, "queue_full", f"more than {max_queue} requests waiting")
+        try:
+            await _wait_or_disconnect(request, fut, lambda: queue.cancel(job_id))
+        except JobCancelled:
+            return _error(409, "cancelled", job_id)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("warming voice %s failed", body.voice)
+            return _error(500, "synthesis_failed", f"{type(exc).__name__}: {exc}")
+        log.info("warmed voice %s", body.voice)
+        return {"voice": body.voice, "state": "warmed"}
 
     @app.post("/cancel/{request_id}")
     async def cancel(request_id: str):

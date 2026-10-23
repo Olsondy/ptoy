@@ -16,6 +16,8 @@ export interface FakeTtsFastApi extends FakeServer {
   readonly calls: Record<string, unknown>[];
   /** Ids passed to `POST /cancel/{id}`. */
   readonly cancels: string[];
+  /** Voices passed to `POST /warm`. */
+  readonly warms: string[];
 }
 
 /** 440 Hz tone, FAKE_FASTAPI_MS_PER_CHAR per character, as raw s16le. */
@@ -26,10 +28,11 @@ export function fakePcm(text: string): Buffer {
   return buf;
 }
 
-/** Implements `services/tts`'s API: `/tts` (cancellable while "synthesizing"), `/cancel/{id}`, `/health`. */
+/** Implements `services/tts`'s API: `/tts` (cancellable while "synthesizing"), `/cancel/{id}`, `/warm`, `/health`. */
 export async function startFakeTtsFastApi(opts: FakeTtsFastApiOptions = {}): Promise<FakeTtsFastApi> {
   const calls: Record<string, unknown>[] = [];
   const cancels: string[] = [];
+  const warms: string[] = [];
   const cancelled = new Set<string>();
 
   const server = await startFakeServer(async (req: FakeRequest, res) => {
@@ -56,6 +59,10 @@ export async function startFakeTtsFastApi(opts: FakeTtsFastApiOptions = {}): Pro
       cancels.push(id);
       cancelled.add(id);
       json(res, 200, { request_id: id, state: 'running' });
+    } else if (req.method === 'POST' && req.url === '/warm') {
+      const { voice } = JSON.parse(req.body.toString()) as { voice: string };
+      warms.push(voice);
+      json(res, 200, { voice, state: 'warmed' });
     } else if (req.method === 'GET' && req.url === '/health') {
       json(res, 200, { status: 'ok', model: 'fake', sample_rate: FAKE_FASTAPI_SAMPLE_RATE });
     } else {
@@ -63,5 +70,5 @@ export async function startFakeTtsFastApi(opts: FakeTtsFastApiOptions = {}): Pro
     }
   });
 
-  return { ...server, calls, cancels };
+  return { ...server, calls, cancels, warms };
 }

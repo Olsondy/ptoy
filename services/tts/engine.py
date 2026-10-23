@@ -57,10 +57,45 @@ def _env_opt(env: dict[str, str], name: str, cast: Callable[[str], Any]) -> Any:
     return None if raw is None or raw.strip() == "" else cast(raw.strip())
 
 
+def voices_from_env(env: dict[str, str]) -> tuple[dict[str, str], str]:
+    """Speaker references by voice id (wav file stem) and the default voice.
+
+    `TTS_VOICES_DIR` holds one `<voice>.wav` per voice; `TTS_REF_AUDIO` adds one more file and,
+    unless `TTS_DEFAULT_VOICE` says otherwise, is the default (a request without `voice`).
+    """
+    voices: dict[str, str] = {}
+    voices_dir = env.get("TTS_VOICES_DIR")
+    if voices_dir:
+        voices_dir = os.path.abspath(voices_dir)
+        if not os.path.isdir(voices_dir):
+            raise ValueError(f"TTS_VOICES_DIR is not a directory: {voices_dir}")
+        for name in sorted(os.listdir(voices_dir)):
+            stem, ext = os.path.splitext(name)
+            if ext.lower() == ".wav":
+                voices[stem] = os.path.join(voices_dir, name)
+    ref_id = None
+    ref = env.get("TTS_REF_AUDIO")
+    if ref:
+        ref = os.path.abspath(ref)
+        ref_id = os.path.splitext(os.path.basename(ref))[0]
+        if voices.get(ref_id, ref) != ref:
+            raise ValueError(f"TTS_REF_AUDIO {ref} and {voices[ref_id]} would both be voice {ref_id!r}")
+        voices[ref_id] = ref
+    if not voices:
+        raise ValueError("no voice: set TTS_VOICES_DIR (one <voice>.wav per voice) and/or TTS_REF_AUDIO")
+    default = env.get("TTS_DEFAULT_VOICE") or ref_id or (next(iter(voices)) if len(voices) == 1 else None)
+    if default is None:
+        raise ValueError(f"set TTS_DEFAULT_VOICE to one of {sorted(voices)}")
+    if default not in voices:
+        raise ValueError(f"TTS_DEFAULT_VOICE {default!r} not found (have: {sorted(voices)})")
+    return voices, default
+
+
 @dataclass
 class EngineConfig:
     indextts_dir: str
-    ref_audio: str
+    voices: dict[str, str]
+    default_voice: str
     model_dir: str
     version: str = "2.5"
     half: bool = True
@@ -83,9 +118,7 @@ class EngineConfig:
     def from_env(cls, env: Optional[dict[str, str]] = None) -> "EngineConfig":
         env = dict(os.environ if env is None else env)
         root = os.path.abspath(env.get("INDEXTTS_DIR") or os.getcwd())
-        ref = env.get("TTS_REF_AUDIO")
-        if not ref:
-            raise ValueError("TTS_REF_AUDIO is required (speaker reference wav on this machine)")
+        voices, default_voice = voices_from_env(env)
         generation = dict(DEFAULT_GENERATION)
         for key, cast in (
             ("top_p", float), ("top_k", int), ("temperature", float), ("length_penalty", float),
@@ -103,7 +136,8 @@ class EngineConfig:
             raise ValueError("TTS_MODEL_VERSION must be 2 or 2.5")
         return cls(
             indextts_dir=root,
-            ref_audio=os.path.abspath(ref),
+            voices=voices,
+            default_voice=default_voice,
             model_dir=os.path.abspath(env.get("TTS_MODEL_DIR") or os.path.join(root, "checkpoints")),
             version=version,
             half=_env_bool(env, "TTS_HALF", True),
@@ -249,8 +283,13 @@ class IndexTtsEngine:
 
     def __init__(self, cfg: EngineConfig):
         self.cfg = cfg
-        if not os.path.isfile(cfg.ref_audio):
-            raise FileNotFoundError(f"TTS_REF_AUDIO not found: {cfg.ref_audio}")
+        for voice, path in cfg.voices.items():
+            if not os.path.isfile(path):
+                raise FileNotFoundError(f"reference audio of voice {voice!r} not found: {path}")
+        self.voices = sorted(cfg.voices)
+        self.default_voice = cfg.default_voice
+        # Voice whose speaker conditioning IndexTTS2 holds: it caches only the last reference path.
+        self.loaded_voice: Optional[str] = None
         # Same import setup as webui.py, which runs from the IndexTTS root (relative paths inside).
         for p in (cfg.indextts_dir, os.path.join(cfg.indextts_dir, "indextts")):
             if p not in sys.path:
@@ -374,14 +413,15 @@ class IndexTtsEngine:
 
     def _infer_kwargs(
         self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, output_path: Optional[str],
-        generation: Optional[dict[str, Any]] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
     ) -> dict[str, Any]:
         vec = None
         if emo_vector is not None:
             normalize = getattr(self.tts, "normalize_emo_vec", None)
             vec = normalize(list(emo_vector), apply_bias=True) if normalize else list(emo_vector)
         kwargs: dict[str, Any] = dict(
-            spk_audio_prompt=self.cfg.ref_audio,  # always the same path: IndexTTS2 caches the speaker conditioning by it
+            # A fixed path per voice: IndexTTS2 caches the speaker conditioning of the last path it saw.
+            spk_audio_prompt=self.cfg.voices[voice or self.cfg.default_voice],
             text=text,
             output_path=output_path,
             emo_audio_prompt=None,
@@ -409,12 +449,17 @@ class IndexTtsEngine:
 
     def synthesize(
         self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, should_abort: Callable[[], bool],
-        generation: Optional[dict[str, Any]] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
     ) -> np.ndarray:
+        voice = voice or self.cfg.default_voice
+        if voice not in self.cfg.voices:
+            raise ValueError(f"unknown voice {voice!r}")
         self._progress.should_abort = should_abort if self.cfg.abort_running else (lambda: False)
+        # Set before inferring: an aborted synthesis may already have replaced the cached reference.
+        self.loaded_voice = voice
         try:
             if self.output_mode == "memory":
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None, generation))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None, generation, voice))
                 parsed = pcm_from_output(output)
                 if parsed is None:
                     raise _NotInMemory(type(output).__name__)
@@ -422,7 +467,7 @@ class IndexTtsEngine:
                 return pcm
             path = os.path.join(self._tmpdir, f"{uuid.uuid4().hex}.wav")
             try:
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path, generation))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path, generation, voice))
                 if not os.path.isfile(path) and isinstance(output, str) and os.path.isfile(output):
                     path = output
                 self.sample_rate, pcm = read_wav(path)
@@ -439,7 +484,9 @@ class IndexTtsEngine:
             "precision": self.precision,
             "sample_rate": self.sample_rate,
             "output_mode": self.output_mode,
-            "ref_audio": os.path.basename(self.cfg.ref_audio),
+            "voices": self.voices,
+            "default_voice": self.default_voice,
+            "loaded_voice": self.loaded_voice,
             "qwen_emo": self.cfg.use_qwen_emo,
             "diffusion": self.diffusion,
             "generation": self.cfg.generation,

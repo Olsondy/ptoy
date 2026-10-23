@@ -17,8 +17,11 @@ class FakeEngine:
     """Returns 10 ms of a ramp per character; can block until released and honours `should_abort`."""
 
     sample_rate = RATE
+    voices = ["chunqing", "wenrou"]
+    default_voice = "chunqing"
 
     def __init__(self, gated=False, fail=None, abortable=False):
+        self.loaded_voice = "chunqing"
         self.calls = []
         self.gated = gated
         self.fail = fail
@@ -29,7 +32,8 @@ class FakeEngine:
         self.active = 0
         self.max_active = 0
 
-    def synthesize(self, text, emo_vector, emo_alpha, should_abort, generation=None):
+    def synthesize(self, text, emo_vector, emo_alpha, should_abort, generation=None, voice=None):
+        self.loaded_voice = voice or self.default_voice
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -37,6 +41,8 @@ class FakeEngine:
             call = {"text": text, "emo_vector": emo_vector, "emo_alpha": emo_alpha}
             if generation is not None:
                 call["generation"] = generation
+            if voice is not None:
+                call["voice"] = voice
             self.calls.append(call)
             self.started.set()
             if self.gated:
@@ -121,6 +127,26 @@ class HttpTest(unittest.TestCase):
         c.post("/tts", json={"text": "嗯。", "generation": {}})
         self.assertEqual(engine.calls[0]["generation"], {"temperature": 0.5, "top_k": 10})
         self.assertNotIn("generation", engine.calls[1])
+
+    def test_voice_reaches_the_engine_and_unknown_voices_are_422(self):
+        engine = FakeEngine()
+        c = self.client(engine)
+        self.assertEqual(c.post("/tts", json={"text": "嗯。", "voice": "wenrou"}).status_code, 200)
+        self.assertEqual(engine.calls[-1]["voice"], "wenrou")
+        res = c.post("/tts", json={"text": "嗯。", "voice": "nope"})
+        self.assertEqual((res.status_code, res.json()["error"]), (422, "unknown_voice"))
+        self.assertEqual(len(engine.calls), 1)
+
+    def test_warm_loads_a_voice_once(self):
+        engine = FakeEngine()
+        c = self.client(engine)
+        self.assertEqual(c.post("/warm", json={"voice": "chunqing"}).json()["state"], "loaded")
+        self.assertEqual(engine.calls, [])
+        self.assertEqual(c.post("/warm", json={"voice": "wenrou"}).json()["state"], "warmed")
+        self.assertEqual(engine.calls[-1]["voice"], "wenrou")
+        self.assertEqual(c.post("/warm", json={"voice": "wenrou"}).json()["state"], "loaded")
+        self.assertEqual(len(engine.calls), 1)
+        self.assertEqual(c.post("/warm", json={"voice": "nope"}).status_code, 422)
 
     def test_validation(self):
         c = self.client(FakeEngine(), max_text_chars=5)

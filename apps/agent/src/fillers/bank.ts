@@ -1,6 +1,6 @@
 import { AudioFrame } from '@livekit/rtc-node';
 import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { toFrames } from '../tts/plugin.js';
 import { decodeWav } from '../tts/wav.js';
@@ -13,7 +13,7 @@ const entrySchema = z.object({
   duration_ms: z.number().nonnegative().optional(),
 });
 
-/** `assets/fillers/manifest.json`, version 1 (services/fillers/README.md). Unknown groups are ignored. */
+/** `assets/fillers/<voice>/manifest.json`, version 1 (services/fillers/README.md). Unknown groups are ignored. */
 const manifestSchema = z.object({
   version: z.literal(1),
   groups: z.record(z.string(), z.array(entrySchema)),
@@ -75,6 +75,11 @@ export function fillerAudio(filler: Filler): ReadableStream<AudioFrame> {
       controller.enqueue(new AudioFrame(f.data, f.sampleRate, f.channels, f.samplesPerChannel));
     },
   });
+}
+
+/** The voice's filler set: fillers are recorded per voice so they sound like the reply after them. */
+export function fillerManifestPath(fillersDir: string, voice: string): string {
+  return join(fillersDir, voice, 'manifest.json');
 }
 
 const cache = new Map<string, Promise<FillerBank>>();
