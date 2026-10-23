@@ -22,6 +22,7 @@
 ## 规则
 - 新增或替换 GPU 上的模型前，先用 `bench/bench_gpu.py` 在 Windows 本机重新压测（显存只剩约 2.5GB 余量）
 - 压测以 Windows 本机数据为准，Mac 经 Wi-Fi 的数据不作数
+- 提交说明和 PR 描述不加任何 AI 署名（不加 `Co-Authored-By: Claude ...`，也不加 "Generated with Claude Code"）；派生的子 Agent 同样适用
 
 ## Agent skills
 
