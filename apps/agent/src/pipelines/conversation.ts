@@ -168,7 +168,14 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
-  const tts = new IndexTTS({ backend: createTtsBackend(config.tts), sampleRate: config.audioSampleRate });
+  // A sentence the LLM left untagged keeps the previous sentence's emotion: missing tags are almost
+  // always a follow-up sentence in the same mood (~10–30% of sentences on Qwen3-8B), and falling
+  // back to 平静 made those sentences sound flat next to their tagged neighbour.
+  const tts = new IndexTTS({
+    backend: createTtsBackend(config.tts),
+    sampleRate: config.audioSampleRate,
+    segmenter: { emotionScope: 'untilNextTag' },
+  });
   const fillerBank = config.fillers ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate) : undefined;
   const fillerGuard = new FillerTurnGuard({
     onFillerStart: (at) => timing.onFillerStart(at),
