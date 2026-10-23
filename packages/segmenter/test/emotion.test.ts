@@ -46,6 +46,20 @@ describe("emotion tags", () => {
     ]);
   });
 
+  it("can instead keep the first tag's emotion for the whole reply", () => {
+    const seg = createSegmenter({ emotionScope: "reply" });
+    const reply = (s: string) => [...chars(s).flatMap((t) => seg.push(t)), ...seg.end()];
+    expect(reply("[哀]唉，辛苦啦。[喜]不过我挺佩服你的。[平静]早点睡。")).toEqual([
+      { text: "唉，辛苦啦。", emotion: "哀" },
+      { text: "不过我挺佩服你的。", emotion: "哀" },
+      { text: "早点睡。", emotion: "哀" },
+    ]);
+    expect(reply("[喜]好呀！[哀]唉。")).toEqual([
+      { text: "好呀！", emotion: "喜" },
+      { text: "唉。", emotion: "喜" },
+    ]);
+  });
+
   it("treat unknown or malformed bracket content as 平静 and drop it from the text", () => {
     expect(run(chars("[开心]好的好的。[用户语气:喜]嗯嗯。【喜】行吧。[ 哀 ]唉。"))).toEqual([
       { text: "好的好的。", emotion: "平静" },

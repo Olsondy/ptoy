@@ -23,8 +23,9 @@ export interface SegmenterOptions {
   /**
    * "sentence" (default, per spec): a sentence without its own tag is 平静.
    * "untilNextTag": a tag's emotion carries over to later untagged sentences.
+   * "reply": the reply's first tag sets the emotion of the whole reply; later tags only cut.
    */
-  readonly emotionScope?: "sentence" | "untilNextTag";
+  readonly emotionScope?: "sentence" | "untilNextTag" | "reply";
   /**
    * "[" or "【" not closed by "]" / "】" within this many characters is kept as
    * literal text; anything closed within it is a tag (dropped if unknown). Default 10.
@@ -79,6 +80,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   let buffer = "";
   let firstDone = false;
   let emotion: Emotion = DEFAULT_EMOTION;
+  let tagged = false;
 
   /**
    * Find the next cut in the buffer, or null if more input is needed.
@@ -140,7 +142,8 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   function pushTag(next: Emotion, out: Segment[]): void {
     emit(buffer, out);
     buffer = "";
-    emotion = next;
+    if (opts.emotionScope !== "reply" || !tagged) emotion = next;
+    tagged = true;
   }
 
   /** Split raw input into text and tags; an incomplete "[..." at the end is kept in `pending`. */
@@ -180,6 +183,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     buffer = "";
     firstDone = false;
     emotion = DEFAULT_EMOTION;
+    tagged = false;
   }
 
   return {

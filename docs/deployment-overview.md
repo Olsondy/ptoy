@@ -99,7 +99,7 @@ LLM_API_KEY=no-key
 TTS_BACKEND=fastapi
 TTS_FASTAPI_URL=http://127.0.0.1:8002
 TTS_EMOTION_CONTROL=vector
-TTS_EMO_WEIGHT=0.8
+TTS_EMO_WEIGHT=0.6
 ```
 
 改用 WebUI 时把 TTS 部分换成：
@@ -110,7 +110,7 @@ TTS_GRADIO_URL=http://127.0.0.1:7860
 TTS_REF_AUDIO=D:/Development/IndexTTS/prompts/vo-10s.wav
 TTS_LANGUAGE=ZH
 TTS_EMOTION_CONTROL=vector
-TTS_EMO_WEIGHT=0.8
+TTS_EMO_WEIGHT=0.6
 ```
 
 把 `LIVEKIT_SERVER_BIN` 改为实际安装路径。`devkey/secret` 对应本地 `livekit-server --dev`，已有独立 LiveKit 时使用与其一致的连接配置。注释独占一行，不放在值后面。完整可选项见 [环境变量示例](../apps/agent/.env.example)。

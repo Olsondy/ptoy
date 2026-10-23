@@ -130,7 +130,7 @@ const conversationSchema = charactersSchema.extend({
   TTS_REF_AUDIO: z.string().min(1).optional(),
   TTS_LANGUAGE: z.enum(['ZH', 'EN', 'JA', 'AR', 'ES']).default('ZH'),
   TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('vector'),
-  TTS_EMO_WEIGHT: z.coerce.number().min(0).max(1).default(0.8),
+  TTS_EMO_WEIGHT: z.coerce.number().min(0).max(1).default(0.6),
   TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   AGENT_AUDIO_SAMPLE_RATE: z.coerce.number().int().positive().default(24000),
   FILLERS_ENABLED: z

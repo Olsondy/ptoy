@@ -186,7 +186,7 @@ describe('TTS_BACKEND=fastapi config', () => {
       backend: 'fastapi',
       url: 'http://10.0.0.2:8002',
       emotionControl: 'vector',
-      emotionWeight: 0.8,
+      emotionWeight: 0.6,
       timeoutMs: 20000,
     });
     expect(createTtsBackend(config.tts).name).toBe('indextts-fastapi');

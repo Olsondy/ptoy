@@ -170,13 +170,12 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
-  // A sentence the LLM left untagged keeps the previous sentence's emotion: missing tags are almost
-  // always a follow-up sentence in the same mood (~10–30% of sentences on Qwen3-8B), and falling
-  // back to 平静 made those sentences sound flat next to their tagged neighbour.
+  // One emotion per reply (its first tag): per-sentence tags switched between the plain reference
+  // voice (平静) and emotion-vector synthesis mid-reply, which sounded like the voice changing.
   const tts = new IndexTTS({
     backend: createTtsBackend(config.tts, character.voice),
     sampleRate: config.audioSampleRate,
-    segmenter: { emotionScope: 'untilNextTag' },
+    segmenter: { emotionScope: 'reply' },
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();

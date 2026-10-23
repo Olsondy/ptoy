@@ -47,7 +47,7 @@ function parseLine(line: string): { tone: Emotion; text: string } {
 
 /** What the TTS speaks and the history keeps: segmenter-cleaned text, plus each segment's emotion. */
 function spoken(raw: string): { text: string; segments: string[] } {
-  const seg = createSegmenter({ emotionScope: 'untilNextTag' });
+  const seg = createSegmenter({ emotionScope: 'reply' });
   const segs = [...seg.push(raw), ...seg.end()];
   return { text: segs.map((s) => s.text).join(''), segments: segs.map((s) => `[${s.emotion}]${s.text}`) };
 }
