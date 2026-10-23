@@ -11,8 +11,8 @@ import {
   voice,
 } from '@livekit/agents';
 import type { Emotion } from '@ptoy/segmenter';
-import { readFileSync } from 'node:fs';
-import { type ConversationConfig, loadConversationConfig } from '../config.js';
+import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
+import { loadConversationConfig } from '../config.js';
 import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
 import { createLlm } from '../llm/index.js';
 import { type Filler, type FillerBank, fillerAudio, loadFillerBank } from '../fillers/bank.js';
@@ -75,7 +75,7 @@ interface FillerHooks {
 }
 
 /**
- * The character: fixed system prompt, CJK-paced transcript, and a filler at the end of each user turn.
+ * The character: its system prompt (picked per call), CJK-paced transcript, and a filler at the end of each user turn.
  *
  * The reply text itself is cut and cleaned (tags removed) by `@ptoy/segmenter` inside the TTS
  * plugin's `stream()`; subtitles and the committed history come from its per-segment transcripts.
@@ -124,12 +124,6 @@ class CharacterAgent extends voice.Agent {
   }
 }
 
-function loadCharacterPrompt(config: ConversationConfig): string {
-  const prompt = readFileSync(config.characterPromptFile, 'utf8').trim();
-  if (!prompt) throw new Error(`Character prompt file is empty: ${config.characterPromptFile}`);
-  return prompt;
-}
-
 /**
  * Full conversation: VAD + SenseVoice STT → llama-server LLM → segmenter + IndexTTS → agent audio
  * track, with a pre-recorded filler played as soon as each user turn ends (M2 #11).
@@ -141,6 +135,13 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   const config = loadConversationConfig();
   const logger = log().child({ pipeline: 'conversation', caller: caller.identity });
   const { vad, turnHandling } = createTurnTaking(config);
+
+  // The page's pick arrives as a caller attribute (ADR 0007); a stale or missing id gets the default.
+  const requested = caller.attributes[ATTRIBUTE_CHARACTER] || undefined;
+  const character = loadCharacters(config.characters.dir, config.characters.defaultId).resolve(requested);
+  if (requested !== undefined && requested !== character.id) {
+    logger.warn({ requested, character: character.id }, 'unknown character, using the default');
+  }
 
   const timing = new TurnTimingTracker((turn) => logger.info({ turn }, 'turn timing'));
   let asrEmotion: string | undefined;
@@ -255,13 +256,14 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   });
 
   await session.start({
-    agent: new CharacterAgent({ instructions: loadCharacterPrompt(config) }, toneOf, fillerHooks),
+    agent: new CharacterAgent({ instructions: character.instructions }, toneOf, fillerHooks),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
     outputOptions: { audioSampleRate: config.audioSampleRate },
   });
   logger.info(
     {
+      character: character.id,
       asr: config.asrUrl,
       llm: config.llm.baseUrl,
       model: config.llm.model,

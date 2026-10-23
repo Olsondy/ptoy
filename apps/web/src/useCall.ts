@@ -76,7 +76,8 @@ export function useCall() {
     void room?.disconnect();
   }, []);
 
-  const start = useCallback(async () => {
+  /** `character` undefined lets the token server pick its default. */
+  const start = useCallback(async (character?: string) => {
     if (activeRoom.current) return;
     const room = new Room();
     activeRoom.current = room;
@@ -108,7 +109,7 @@ export function useCall() {
       void room.startAudio();
       mic = await openMicrophone();
       if (!isCurrent()) throw new CallError('');
-      const token = await fetchCallToken().catch(() => {
+      const token = await fetchCallToken(character).catch(() => {
         throw new CallError('无法获取通话凭证，请确认 token 服务已启动。');
       });
       if (!isCurrent()) throw new CallError('');

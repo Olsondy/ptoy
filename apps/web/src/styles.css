@@ -148,3 +148,58 @@ body {
   outline: 2px solid var(--fg);
   outline-offset: 3px;
 }
+
+.character-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.character-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.character-option {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.character-option.is-selected {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.character-option:disabled {
+  cursor: default;
+}
+
+.character-option:disabled:not(.is-selected) {
+  opacity: 0.4;
+}
+
+.character-option:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.character-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}

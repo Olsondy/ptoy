@@ -7,7 +7,22 @@ const livekitSchema = z.object({
   LIVEKIT_API_SECRET: z.string().min(1),
 });
 
+/** Character prompts shipped with the agent: one `<id>.md` per character plus `_rules.md` (edit the files, not the code). */
+export const DEFAULT_CHARACTERS_DIR = fileURLToPath(new URL('../prompts/characters', import.meta.url));
+
+const charactersSchema = z.object({
+  CHARACTERS_DIR: z.string().min(1).default(DEFAULT_CHARACTERS_DIR),
+  DEFAULT_CHARACTER: z.string().min(1).default('xiaoyou'),
+});
+
+/** Where the character prompts live and which one a call gets when the page picked none (ADR 0007). */
+export interface CharactersConfig {
+  readonly dir: string;
+  readonly defaultId: string;
+}
+
 const tokenServerSchema = livekitSchema.extend({
+  ...charactersSchema.shape,
   LIVEKIT_PUBLIC_URL: z.string().url().optional(),
   TOKEN_SERVER_HOST: z.string().default('0.0.0.0'),
   TOKEN_SERVER_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
@@ -24,6 +39,7 @@ export interface TokenServerConfig {
   readonly port: number;
   readonly corsOrigin: string;
   readonly tokenTtl: string;
+  readonly characters: CharactersConfig;
 }
 
 export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): TokenServerConfig {
@@ -41,6 +57,7 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
     port: e.TOKEN_SERVER_PORT,
     corsOrigin: e.TOKEN_SERVER_CORS_ORIGIN,
     tokenTtl: e.TOKEN_TTL,
+    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
   };
 }
 
@@ -95,13 +112,10 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
   };
 }
 
-/** Character system prompt shipped with the agent (edit the file, not the code). */
-export const DEFAULT_CHARACTER_PROMPT_FILE = fileURLToPath(new URL('../prompts/character.md', import.meta.url));
-
 /** Pre-recorded fillers shipped in the repo (services/fillers generates them). */
 export const DEFAULT_FILLERS_MANIFEST = fileURLToPath(new URL('../../../assets/fillers/manifest.json', import.meta.url));
 
-const conversationSchema = z.object({
+const conversationSchema = charactersSchema.extend({
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   LLM_MODEL: z.string().min(1).default('qwen3-8b'),
   // llama-server ignores the key; the OpenAI client just needs a non-empty one.
@@ -110,7 +124,6 @@ const conversationSchema = z.object({
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
-  CHARACTER_PROMPT_FILE: z.string().min(1).default(DEFAULT_CHARACTER_PROMPT_FILE),
   TTS_BACKEND: z.enum(['gradio', 'fastapi']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
@@ -170,7 +183,7 @@ export type TtsConfig = GradioTtsConfig | FastApiTtsConfig;
 export interface ConversationConfig extends CallConfig {
   readonly llm: LlmConfig;
   readonly tts: TtsConfig;
-  readonly characterPromptFile: string;
+  readonly characters: CharactersConfig;
   /** Sample rate of the agent's published audio track; TTS output is resampled to it. */
   readonly audioSampleRate: number;
   /** Play a pre-recorded filler when a user turn ends (`undefined` = disabled). */
@@ -217,7 +230,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       maxRetry: e.LLM_MAX_RETRY,
     },
     tts,
-    characterPromptFile: e.CHARACTER_PROMPT_FILE,
+    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
     fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST } : undefined,
   };
