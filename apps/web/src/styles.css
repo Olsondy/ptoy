@@ -34,12 +34,12 @@
   --call-header-icon-size: 18px;
   --call-header-icon-stroke: 1.5;
   --call-icon-stroke: 1.8;
-  --call-control-ink: #c4c6cc;
-  --call-control-fill: #24262a;
-  --call-control-hover: #2d3035;
-  --call-end-ink: #dc9a9f;
-  --call-end-fill: #302125;
-  --call-end-hover: #3b272c;
+  --call-control-ink: #fff;
+  --call-control-fill: #34c759;
+  --call-control-hover: #2db34e;
+  --call-end-ink: #fff;
+  --call-end-fill: #ff3b30;
+  --call-end-hover: #e9342b;
   --call-control-selected: #292a2e;
   --border: #ffffff14;
   --input: #ffffff20;
@@ -185,9 +185,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .control-icon:hover::before { background: var(--call-control-selected); }
 }
 @media (max-width: 600px), (pointer: coarse) {
-  .call {
-    --call-target-size: 48px;
-    --call-phone-icon-size: 22px;
+  .call-controls {
+    --call-control-size: 3.5rem;
+    --call-target-size: 64px;
+    --call-phone-icon-size: 26px;
     --call-icon-stroke: 2;
   }
 }
