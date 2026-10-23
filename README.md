@@ -122,5 +122,6 @@ pnpm install
 
 ## 文档
 
+- [部署总览：下载安装 → 启动 → 应用连接](docs/deployment-overview.md) · [安装资料](docs/installation/README.md)
 - [架构](docs/architecture/server.md) · [情绪链路](docs/architecture/emotion-pipeline.md)
 - [路线图](docs/roadmap/mvp-v1.md) · [决策记录](docs/decisions/)

@@ -69,9 +69,11 @@
 ## 5. llama-server 配置
 
 ```bat
-llama-server -m Qwen3-8B-Q5_K_M.gguf --alias qwen3-8b --host 0.0.0.0 --port 8080 ^
+llama-server -m "D:\Resources\MyWorkspace\ai\models\Huihui-Qwen3-8B-abliterated-v2.Q5_K_M\Huihui-Qwen3-8B-abliterated-v2.Q5_K_M.gguf" --alias qwen3-8b --host 0.0.0.0 --port 8080 ^
   -ngl 99 --fit off -c 8192 -np 1 -fa on --cache-type-k q8_0 --cache-type-v q8_0 ^
-  -b 512 -ub 512 -t 8 --cache-ram 512 --jinja --reasoning off --reasoning-budget 0
+  -b 512 -ub 512 -t 8 --cache-ram 512 --jinja ^
+  --chat-template-file "D:\Development\llama.cpp\templates\huihui-qwen3-8b-v2.jinja" ^
+  --reasoning off --reasoning-budget 0 --reasoning-format deepseek
 ```
 
 - 用单模型模式（`-m`），不用路由模式：不会按需加载或空闲卸载，请求里也不用带 `model` 字段
@@ -80,6 +82,23 @@ llama-server -m Qwen3-8B-Q5_K_M.gguf --alias qwen3-8b --host 0.0.0.0 --port 8080
 - NVIDIA 控制面板里，CUDA 系统内存回退策略设为“首选无系统内存回退”：显存不足时直接报错，而不是悄悄变慢
 - 启动顺序：先启动 IndexTTS，再启动 llama-server
 - 前缀缓存：system prompt 固定、对话历史只追加不改，可以让每轮的首 token 延迟保持在几十毫秒
+- 本机曾在只设置 `--reasoning off --reasoning-budget 0`、使用 GGUF 内置模板时仍输出思考内容；当前同时加载原模型模板并指定 reasoning 格式，已验证直接输出正式回答。
+
+### 本机部署基线
+
+安装和操作入口见 [部署总览](../deployment-overview.md)，下载清单集中在 [installation](../installation/README.md)。以下为本机部署配置，不代表服务实时运行状态。
+
+| 服务 | 程序目录 | 模型目录（相对于 `D:\Resources\MyWorkspace\ai\models`） | 运行方式 |
+|---|---|---|---|
+| Qwen3 8B | `D:\Development\llama.cpp` | `Huihui-Qwen3-8B-abliterated-v2.Q5_K_M` | 原生 CUDA llama-server，无 Conda |
+| IndexTTS 2.5 | `D:\Development\IndexTTS` | `IndexTTS-2.5` | `D:\Resources\MyWorkspace\ai\conda\envs\indextts`，Python 3.11 |
+| SenseVoiceSmall | `D:\Development\SenseVoice` | `SenseVoiceSmall` | `D:\Resources\MyWorkspace\ai\conda\envs\sensevoice`，Python 3.11 |
+
+每个模型目录只有一个 `Start-*.ps1` 入口，转调程序目录的实际启动脚本；Python 服务脚本直接调用专用环境的 `python.exe` 并设置 PATH，无需手动 `conda activate`。
+
+IndexTTS 使用官方 `index-tts/index-tts` 源码 `d9e41aac89fd00b3d71497fddb287b7f24613712`，本地 `webui.py` 有启动参数和默认值调整。当前配置为 `--version 2.5 --fp16 --no_qwen_emo --gui_seg_tokens 80`、`num_beams=1`；2.5 分支把 `--fp16` 映射为 BF16。未启用 DeepSpeed、定制 CUDA 内核或 torch.compile。参考音频为 `D:\Development\IndexTTS\prompts\vo-10s.wav`（原文件 `F:\ALL\vo-10s.wav`）。
+
+SenseVoice 的本地 `server.py` 基于 FunASR 1.4.14 和 PyTorch 2.8.0+cu128，使用 FP32、串行请求和 20 秒固定窗口，无服务端 VAD。按 ADR-0003，应用部署显式传 `-Device cpu`；脚本未传参数时仍默认 GPU，GPU 入口仅作可选测试。此前三模型共用 GPU 的数据不能当作 Windows CPU ASR 的验收结果。
 
 ## 6. 实测数据（Windows 本机，`bench/bench_gpu.py`）
 
@@ -158,11 +177,11 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
 - 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860（WebUI）或 8002（TTS FastAPI）、8080、8001（ASR）
-- 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS（例如反向代理），目前未提供
+- 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS。现有 Tailscale 操作步骤见根目录 `README.md`。
 
 ## 10. 待定事项
 
-- IndexTTS 安装的是非官方版本（带语言选择、预设、术语表）。已按它的 `webui.py` 实现阶段 2；`infer` 是否支持 `output_path=None`、是否有扩散步数参数、`gr_progress` 回调位置，以服务启动日志打印的签名为准（#14）
+- IndexTTS 当前为官方源码加本地 `webui.py` 调整；仓库已实现阶段 2 FastAPI 服务，本机仍使用上述 WebUI 部署基线。切换前需验证当前 2.5 推理接口兼容性；`infer` 是否支持 `output_path=None`、是否有扩散步数参数、`gr_progress` 回调位置，以服务启动日志打印的签名为准（#14）。
 - 扩散步数降低后音质和速度的取舍，需要实测（§6「TTS FastAPI 服务实测」）
 - 轮次检测模型对中文的效果，需要实测
 
