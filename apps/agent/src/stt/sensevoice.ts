@@ -96,6 +96,11 @@ export interface SenseVoiceSTTOptions {
   readonly language?: string;
   /** Called for every non-empty recognized utterance (text + emotion + events). */
   readonly onTranscript?: (transcript: AsrTranscript) => void;
+  /**
+   * Recognized text for which this returns true is reported as empty (no transcript, no turn),
+   * e.g. a "嗯" while the agent is talking. Asked when the result arrives.
+   */
+  readonly ignore?: (text: string) => boolean;
   /** Injected for tests; defaults to the global `fetch`. */
   readonly fetch?: typeof fetch;
 }
@@ -226,9 +231,12 @@ export class SenseVoiceSTT extends stt.STT {
     const pcm = toAsrPcm(buffer);
     const audioMs = Math.round((pcm.length / ASR_SAMPLE_RATE) * 1000);
     try {
-      const { text, emotion, events, durationMs } = await this.#post(pcm, abortSignal);
+      const result = await this.#post(pcm, abortSignal);
+      const { emotion, events, durationMs } = result;
+      const ignored = result.text !== '' && this.#opts.ignore?.(result.text) === true;
+      const text = ignored ? '' : result.text;
       const metadata: AsrMetadata = { emotion, events, inferenceMs: durationMs, audioMs };
-      this.#logger.debug({ text, emotion, events, inferenceMs: durationMs, audioMs }, 'asr result');
+      this.#logger.debug({ text: result.text, ignored, emotion, events, inferenceMs: durationMs, audioMs }, 'asr result');
       if (text) this.#opts.onTranscript?.({ text, ...metadata });
       return {
         type: stt.SpeechEventType.FINAL_TRANSCRIPT,

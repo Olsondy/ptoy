@@ -48,21 +48,31 @@ const callSchema = z.object({
   ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
   ASR_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   ASR_LANGUAGE: z.string().min(2).default('zh'),
-  TURN_DETECTOR: z.enum(['vad', 'eot']).default('vad'),
+  TURN_DETECTOR: z.enum(['vad', 'eot', 'transcript']).default('transcript'),
   VAD_MIN_SILENCE_MS: z.coerce.number().int().positive().default(550),
-  ENDPOINTING_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(500),
-  ENDPOINTING_MAX_DELAY_MS: z.coerce.number().int().positive().default(3000),
+  ENDPOINTING_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(800),
+  ENDPOINTING_MAX_DELAY_MS: z.coerce.number().int().positive().default(2000),
+  INTERRUPTION_MIN_SPEECH_MS: z.coerce.number().int().positive().default(150),
+  FALSE_INTERRUPTION_TIMEOUT_MS: z.coerce.number().int().positive().default(1000),
 });
 
 export interface CallConfig {
   readonly asrUrl: string;
   readonly asrTimeoutMs: number;
   readonly asrLanguage: string;
-  /** `vad`: VAD silence ends the turn (default, see docs/architecture/server.md); `eot`: LiveKit's local audio end-of-turn model on top of VAD. */
-  readonly turnDetector: 'vad' | 'eot';
+  /**
+   * `vad`: VAD silence ends the turn; `transcript`: like `vad`, but a transcript that stops
+   * mid-sentence ("然后", "我觉得", "，") waits `endpointingMaxDelayMs`; `eot`: LiveKit's local audio
+   * end-of-turn model on top of VAD. See docs/architecture/server.md §11.
+   */
+  readonly turnDetector: 'vad' | 'eot' | 'transcript';
   readonly vadMinSilenceMs: number;
   readonly endpointingMinDelayMs: number;
   readonly endpointingMaxDelayMs: number;
+  /** Caller speech this long pauses the agent (reversible until a transcript confirms it). */
+  readonly interruptionMinSpeechMs: number;
+  /** A pause with no transcript after this much silence resumes the agent (cough, noise, "嗯"). */
+  readonly falseInterruptionTimeoutMs: number;
 }
 
 export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig {
@@ -80,6 +90,8 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
     vadMinSilenceMs: e.VAD_MIN_SILENCE_MS,
     endpointingMinDelayMs: e.ENDPOINTING_MIN_DELAY_MS,
     endpointingMaxDelayMs: e.ENDPOINTING_MAX_DELAY_MS,
+    interruptionMinSpeechMs: e.INTERRUPTION_MIN_SPEECH_MS,
+    falseInterruptionTimeoutMs: e.FALSE_INTERRUPTION_TIMEOUT_MS,
   };
 }
 

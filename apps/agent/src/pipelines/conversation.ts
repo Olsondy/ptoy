@@ -15,13 +15,8 @@ import { createLlm } from '../llm/index.js';
 import { type Filler, type FillerBank, fillerAudio, loadFillerBank } from '../fillers/bank.js';
 import { FillerTurnGuard } from '../fillers/turn.js';
 import { IndexTTS, TtsError, createTtsBackend } from '../tts/index.js';
-import {
-  INTERRUPTION_MIN_SPEECH_MS,
-  attributePublisher,
-  createStt,
-  createTurnTaking,
-  publishSttErrors,
-} from './listening.js';
+import { isBackchannel } from './backchannel.js';
+import { attributePublisher, createStt, createTurnTaking, publishSttErrors } from './listening.js';
 import { TurnTimingTracker } from './turn-timing.js';
 import type { CallPipeline } from './types.js';
 
@@ -135,15 +130,26 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   const timing = new TurnTimingTracker((turn) => logger.info({ turn }, 'turn timing'));
   let asrEmotion: string | undefined;
-  const stt = createStt(config, (t) => {
-    asrEmotion = t.emotion;
-    timing.onAsrResult(t.inferenceMs);
-    logger.debug({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
-  });
+  // Agent speech queued, playing or paused: while it holds the floor a bare "嗯" / "对" is
+  // listener feedback, not a turn (dropped by the STT, so a paused reply resumes).
+  const agentSpeeches = new Set<voice.SpeechHandle>();
+  const backchannelWhileAgentTalks = (text: string) => {
+    if (agentSpeeches.size === 0 || !isBackchannel(text)) return false;
+    logger.debug({ text }, 'backchannel while the agent holds the floor, ignored');
+    return true;
+  };
+  const stt = createStt(
+    config,
+    (t) => {
+      asrEmotion = t.emotion;
+      timing.onAsrResult(t.inferenceMs);
+      logger.debug({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
+    },
+    backchannelWhileAgentTalks,
+  );
   const tts = new IndexTTS({ backend: createTtsBackend(config.tts), sampleRate: config.audioSampleRate });
   const fillerBank = config.fillers ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate) : undefined;
   const fillerGuard = new FillerTurnGuard({
-    minSpeechMs: INTERRUPTION_MIN_SPEECH_MS,
     onFillerStart: (at) => timing.onFillerStart(at),
     onReplyDropped: (id) => logger.info({ speechId: id }, 'caller spoke over the filler, queued reply dropped'),
   });
@@ -193,11 +199,15 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     timing.onMetrics(ev.metrics);
   });
   session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
-    if (ev.isFinal && ev.transcript) timing.onUserTranscript(ev.transcript);
+    if (!ev.isFinal || !ev.transcript) return;
+    timing.onUserTranscript(ev.transcript);
+    fillerGuard.userTranscript();
   });
-  session.on(voice.AgentSessionEventTypes.UserStateChanged, (ev) => fillerGuard.userState(ev.newState));
   session.on(voice.AgentSessionEventTypes.SpeechCreated, (ev) => {
-    if (ev.source === 'generate_reply') fillerGuard.replyCreated(ev.speechHandle);
+    const handle = ev.speechHandle;
+    agentSpeeches.add(handle);
+    handle.addDoneCallback(() => agentSpeeches.delete(handle));
+    if (ev.source === 'generate_reply') fillerGuard.replyCreated(handle);
   });
   session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
     if (!fillerGuard.agentState(ev.newState, ev.createdAt)) timing.onAgentState(ev.newState, ev.createdAt);
