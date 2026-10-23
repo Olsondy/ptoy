@@ -157,6 +157,8 @@ export class TurnTimingTracker {
   onAgentReply(text: string, interrupted: boolean, startedSpeakingAt?: number): void {
     const turn = this.#current;
     if (!turn) return;
+    // An interrupted reply of the previous turn is committed only after this turn started: not ours.
+    if (startedSpeakingAt !== undefined && turn.stoppedAt && startedSpeakingAt < turn.stoppedAt) return;
     if (startedSpeakingAt !== undefined) turn.playoutAt = startedSpeakingAt;
     turn.reply = text;
     turn.interrupted ||= interrupted;

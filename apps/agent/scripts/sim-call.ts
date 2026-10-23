@@ -283,8 +283,9 @@ async function main(): Promise<number> {
     const bargeIn = i === bargedTurn;
     while (Date.now() < until) {
       if (bargeIn && firstAudioAt && Date.now() - firstAudioAt >= (bargeInMs ?? 0)) break;
-      if (firstAudioAt && state() !== 'speaking' && Date.now() - lastAudioAt > 1500) break;
-      if (!firstAudioAt && agentError && state() === 'listening') break;
+      // The reply has subtitles, the filler has none: a silence after the filler is not the end.
+      if (firstAudioAt && subtitleFirstAt && state() !== 'speaking' && Date.now() - lastAudioAt > 1500) break;
+      if (agentError && state() === 'listening') break;
       await sleep(50);
     }
     if (!bargeIn) await sleep(300);
