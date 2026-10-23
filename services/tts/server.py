@@ -3,7 +3,7 @@
 Run inside the IndexTTS conda env, with the WebUI stopped (two model copies do not fit in VRAM):
   set INDEXTTS_DIR=D:\\index-tts
   set TTS_VOICES_DIR=D:\\voices        (one <voice>.wav per voice; or TTS_REF_AUDIO for a single one)
-  set TTS_DEFAULT_VOICE=chunqing
+  set TTS_DEFAULT_VOICE=default-relaxing
   python services\\tts\\server.py
 All settings are environment variables, see README.md.
 """

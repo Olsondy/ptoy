@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "sample_rate": 48000,
+  "channels": 1,
+  "sample_format": "s16le",
+  "voice": {
+    "id": "default-relaxing",
+    "ref": "default-relaxing.wav",
+    "ref_sha256": null
+  },
+  "groups": {
+    "thinking": [
+      {
+        "id": "thinking_en",
+        "text": "嗯…",
+        "file": "thinking_en.wav",
+        "duration_ms": 460,
+        "sample_rate": 48000
+      },
+      {
+        "id": "thinking_wo_xiang_xiang",
+        "text": "我想想",
+        "file": "thinking_wo_xiang_xiang.wav",
+        "duration_ms": 990,
+        "sample_rate": 48000
+      },
+      {
+        "id": "thinking_rang_wo_xiang_xiang",
+        "text": "让我想想啊",
+        "file": "thinking_rang_wo_xiang_xiang.wav",
+        "duration_ms": 1270,
+        "sample_rate": 48000
+      }
+    ],
+    "ack": [
+      {
+        "id": "ack_hao_de",
+        "text": "好的，",
+        "file": "ack_hao_de.wav",
+        "duration_ms": 760,
+        "sample_rate": 48000
+      },
+      {
+        "id": "ack_en_en",
+        "text": "嗯嗯",
+        "file": "ack_en_en.wav",
+        "duration_ms": 660,
+        "sample_rate": 48000
+      },
+      {
+        "id": "ack_hao_ya",
+        "text": "好呀",
+        "file": "ack_hao_ya.wav",
+        "duration_ms": 700,
+        "sample_rate": 48000
+      }
+    ],
+    "empathy": [
+      {
+        "id": "empathy_zhe_yang_a",
+        "text": "啊，这样啊",
+        "file": "empathy_zhe_yang_a.wav",
+        "duration_ms": 1440,
+        "sample_rate": 48000
+      },
+      {
+        "id": "empathy_wo_ming_bai",
+        "text": "嗯，我明白",
+        "file": "empathy_wo_ming_bai.wav",
+        "duration_ms": 1530,
+        "sample_rate": 48000
+      }
+    ]
+  }
+}

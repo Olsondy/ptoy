@@ -121,12 +121,12 @@ $env:NO_PROXY = 'localhost,127.0.0.1'
 $env:INDEXTTS_DIR  = 'D:\Development\IndexTTS'
 $env:TTS_MODEL_DIR = 'D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
 $env:TTS_VOICES_DIR    = 'D:\Development\IndexTTS\prompts\voices'
-$env:TTS_DEFAULT_VOICE = 'chunqing'
+$env:TTS_DEFAULT_VOICE = 'default-relaxing'
 
 & "$envRoot\python.exe" 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\server.py'
 ```
 
-`voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，例如 `chunqing.wav` 是 `03-纯情闺蜜.wav` 的副本。增删音色后重启服务（ADR 0008）。
+`voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，当前是 `default-relaxing.wav`（小悠，素材包“治愈放松女声”截到 12.3s）和 `gentle.wav`（知夏）。增删音色后重启服务（ADR 0008）。
 
 服务默认与当前 WebUI 配置一致：v2.5、半精度（BF16）、不加载 QwenEmotion、`num_beams=1`。`TTS_MODEL_DIR` 必须指向上面的模型目录；不设置时会去 `<INDEXTTS_DIR>\checkpoints` 找 `config.yaml`。
 

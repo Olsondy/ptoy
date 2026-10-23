@@ -12,11 +12,15 @@ python3 -m venv .venv && .venv/bin/pip install -r services/fillers/requirements.
 
 # 新增音色或换了某个音色的参考音频后，全量生成这个音色（会删掉定义里已不存在的旧 wav）
 INDEXTTS_URL=http://192.168.31.82:7860 \
-INDEXTTS_REF_AUDIO=/path/to/chunqing.wav \
-  .venv/bin/python services/fillers/generate.py --voice chunqing
+INDEXTTS_REF_AUDIO=/path/to/default-relaxing.wav \
+  .venv/bin/python services/fillers/generate.py --voice default-relaxing
+
+# 不切 WebUI：直接用正在跑的 TTS 服务（音色是服务端 TTS_VOICES_DIR 里的 <音色>.wav；
+# 不给 --ref 时 manifest 的 ref_sha256 为 null）
+.venv/bin/python services/fillers/generate.py --backend fastapi --tts-url http://192.168.31.82:8002 --voice gentle
 
 # 只重做某几条（其余条目保留在 manifest 中）
-.venv/bin/python services/fillers/generate.py --voice chunqing --tts-url http://... --ref /path/to/chunqing.wav --only ack_hao_de --only thinking_en
+.venv/bin/python services/fillers/generate.py --voice default-relaxing --tts-url http://... --ref /path/to/default-relaxing.wav --only ack_hao_de --only thinking_en
 ```
 
 - 参考音频不要提交进仓库；manifest 里记录了它的文件名和 sha256，用来核对产物来自哪个音色
@@ -42,7 +46,7 @@ TTS 原始输出（IndexTTS2 为 22.05kHz）依次经过：
   "sample_rate": 48000,
   "channels": 1,
   "sample_format": "s16le",
-  "voice": { "id": "chunqing", "ref": "chunqing.wav", "ref_sha256": "..." },
+  "voice": { "id": "default-relaxing", "ref": "default-relaxing.wav", "ref_sha256": "...（fastapi 后端未给 --ref 时为 null）" },
   "groups": {
     "thinking": [
       { "id": "thinking_en", "text": "嗯…", "file": "thinking_en.wav", "duration_ms": 380, "sample_rate": 48000 }

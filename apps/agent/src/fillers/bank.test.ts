@@ -12,7 +12,7 @@ describe('loadFillerBank', () => {
   });
 
   it('loads every filler of the shipped manifest at the agent track rate', async () => {
-    const bank = await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'chunqing'), 24000);
+    const bank = await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'default-relaxing'), 24000);
     expect(bank.fillers.length).toBeGreaterThanOrEqual(6);
     expect(new Set(bank.fillers.map((f) => f.group))).toEqual(new Set(['thinking', 'ack', 'empathy']));
     for (const f of bank.fillers) {
@@ -76,7 +76,7 @@ describe('fillerGate', () => {
       await vi.advanceTimersByTimeAsync(800);
       ready();
       await expect(gate).resolves.toBe(false);
-      const filler = (await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'chunqing'), 24000)).fillers[0]!;
+      const filler = (await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'default-relaxing'), 24000)).fillers[0]!;
       let frames = 0;
       for await (const _ of fillerAudio(filler, gate)) frames++;
       expect(frames).toBe(0);
