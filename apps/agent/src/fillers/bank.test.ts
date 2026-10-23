@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FILLERS_MANIFEST } from '../config.js';
-import { fillerAudio, loadFillerBank } from './bank.js';
+import { type Filler, FillerBank, fillerAudio, loadFillerBank } from './bank.js';
 
 describe('loadFillerBank', () => {
   it('loads every filler of the shipped manifest at the agent track rate', async () => {
@@ -18,5 +18,30 @@ describe('loadFillerBank', () => {
 
   it('rejects a missing manifest', async () => {
     await expect(loadFillerBank('/nonexistent/manifest.json', 24000)).rejects.toThrow(/Invalid filler manifest/);
+  });
+});
+
+describe('FillerBank.next', () => {
+  const filler = (id: string, group: Filler['group']): Filler => ({ id, group, text: id, durationMs: 500, frames: [] });
+  const fillers = [filler('t1', 'thinking'), filler('t2', 'thinking'), filler('a1', 'ack'), filler('a2', 'ack')];
+  const question = '你最喜欢的电影是什么？';
+  const statement = '我刚下班。';
+
+  it('skips a plain acknowledgement by chance, never a real question', () => {
+    const bank = new FillerBank(fillers, () => 0.7);
+    expect(bank.next(statement)).toBeUndefined();
+    expect(bank.next(question)?.group).toBe('thinking');
+  });
+
+  it('halves the chance of a group that played on the turn before', () => {
+    const bank = new FillerBank(fillers, () => 0.7);
+    expect(bank.next(question)).toBeDefined();
+    expect(bank.next(question)).toBeUndefined();
+    expect(bank.next(question)).toBeDefined();
+  });
+
+  it('plays every turn with always', () => {
+    const bank = new FillerBank(fillers, () => 0.99, true);
+    expect([statement, statement, question, question].map((t) => bank.next(t)?.id).every(Boolean)).toBe(true);
   });
 });

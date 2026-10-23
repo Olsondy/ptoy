@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { FillerPicker, type FillerGroup, chooseFillerGroup } from './choice.js';
+import { FillerPicker, type FillerGroup, chooseFillerGroup, fillerPlayChance } from './choice.js';
 
 describe('chooseFillerGroup', () => {
   it.each<[string, FillerGroup]>([
-    ['你叫什么名字？', 'thinking'],
-    ['今天天气怎么样', 'thinking'],
-    ['你喜欢猫吗', 'thinking'],
-    ['为什么天是蓝的', 'thinking'],
+    ['你最喜欢的电影是什么？', 'thinking'],
+    ['明天天气怎么样啊', 'thinking'],
+    ['为什么天是蓝的呢', 'thinking'],
+    ['你吃了吗？', 'ack'],
+    ['在干嘛呢', 'ack'],
+    ['你喜欢猫吗', 'ack'],
     ['帮我想个名字', 'ack'],
     ['你可以给我讲个故事吗？', 'ack'],
     ['那我们周末一起去爬山好不好？', 'ack'],
@@ -16,13 +18,31 @@ describe('chooseFillerGroup', () => {
     ['我今天好累啊', 'empathy'],
     ['我好难过，怎么办？', 'empathy'],
     ['唉，又被老板骂了', 'empathy'],
+    ['哎你知道吗，我今天去爬山了', 'ack'],
+    ['你累不累', 'ack'],
+    ['麻烦你再讲一遍', 'ack'],
   ])('%s → %s', (text, group) => {
     expect(chooseFillerGroup(text)).toBe(group);
   });
 
-  it('a negative ASR emotion makes it empathy', () => {
-    expect(chooseFillerGroup('今天天气怎么样', 'sad')).toBe('empathy');
-    expect(chooseFillerGroup('今天天气怎么样', 'happy')).toBe('thinking');
+  it('a negative ASR emotion makes a statement empathy, but not a question or request', () => {
+    expect(chooseFillerGroup('我刚下班。', 'sad')).toBe('empathy');
+    expect(chooseFillerGroup('我刚下班。', 'happy')).toBe('ack');
+    expect(chooseFillerGroup('明天天气怎么样啊', 'sad')).toBe('thinking');
+    expect(chooseFillerGroup('帮我想个名字', 'angry')).toBe('ack');
+  });
+});
+
+describe('fillerPlayChance', () => {
+  it('always plays thinking and empathy, half of the plain acks', () => {
+    expect(fillerPlayChance('thinking', undefined)).toBe(1);
+    expect(fillerPlayChance('empathy', 'ack')).toBe(1);
+    expect(fillerPlayChance('ack', undefined)).toBe(0.5);
+  });
+
+  it('halves the chance when the same group played last turn', () => {
+    expect(fillerPlayChance('empathy', 'empathy')).toBe(0.5);
+    expect(fillerPlayChance('ack', 'ack')).toBe(0.25);
   });
 });
 

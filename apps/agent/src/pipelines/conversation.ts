@@ -177,7 +177,9 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     sampleRate: config.audioSampleRate,
     segmenter: { emotionScope: 'untilNextTag' },
   });
-  const fillerBank = config.fillers ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate) : undefined;
+  const fillerBank = config.fillers
+    ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate, config.fillers.always)
+    : undefined;
   const fillerGuard = new FillerTurnGuard({
     onFillerStart: (at) => timing.onFillerStart(at),
     onReplyDropped: (id) => logger.info({ speechId: id }, 'caller spoke over the filler, queued reply dropped'),
