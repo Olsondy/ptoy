@@ -90,7 +90,8 @@ export interface SenseVoiceSTTOptions {
   /** Per-request timeout in milliseconds. */
   readonly timeoutMs: number;
   /**
-   * Language reported on transcripts (the service auto-detects the spoken language); the
+   * Spoken language, sent to the service (`auto` lets SenseVoice detect it, which can mistake
+   * short Chinese utterances for Korean or Japanese) and reported on transcripts; the
    * end-of-turn model uses it to pick its per-language threshold.
    */
   readonly language?: string;
@@ -277,6 +278,7 @@ export class SenseVoiceSTT extends stt.STT {
       const form = new FormData();
       form.append('file', new Blob([toWav(pcm)], { type: 'audio/wav' }), 'utterance.wav');
       form.append('response_format', 'json');
+      form.append('language', this.#opts.language ?? 'zh');
       res = await this.#fetch(this.#endpoint, { method: 'POST', body: form, signal });
     } catch (error) {
       if (timeout.aborted) {
