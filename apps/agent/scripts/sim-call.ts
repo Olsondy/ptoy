@@ -11,7 +11,14 @@
  *   --fake asr,llm,tts     replace those services with in-process fakes (test/fakes)
  *   --fail llm|tts         with the corresponding fake: every request fails
  *   --voice Ting-Ting      macOS `say` voice
- * Env: LIVEKIT_SERVER_BIN starts a throwaway livekit-server --dev on :7900; otherwise LIVEKIT_URL
+ *   --barge-in 200         the caller starts the last turn 200 ms after the agent audio of the
+ *                          turn before started (i.e. during its filler); checks that the filler
+ *                          stops and that turn's reply is never played. Needs ≥3 turns: the
+ *                          agent's first 3 s of speech are not interruptible (AEC warm-up). Make
+ *                          the interrupted turn emotional (e.g. "我今天好累啊") so its filler is a
+ *                          long empathy one and the barge-in lands inside it.
+ * Env: SIM_LOG_LEVEL=debug sets the agent's log level, SIM_DUMP=1 prints every agent log line.
+ * LIVEKIT_SERVER_BIN starts a throwaway livekit-server --dev on :7900; otherwise LIVEKIT_URL
  * (+ key/secret) must point at a running server. The rest comes from apps/agent/.env.
  * Exits non-zero if a turn got no agent audio (unless --fail is given).
  */
@@ -35,17 +42,24 @@ const out = (line: string) => process.stdout.write(`${line}\n`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const { values } = parseArgs({
+  // `pnpm sim:call -- --turns ...` forwards the `--` itself.
+  args: process.argv.slice(2).filter((a) => a !== '--'),
   options: {
     turns: { type: 'string', default: '你好，你是谁？|你平时喜欢做什么？|那我们周末一起去爬山好不好？' },
     fake: { type: 'string', default: '' },
     fail: { type: 'string' },
     voice: { type: 'string', default: 'Ting-Ting' },
     'turn-timeout': { type: 'string', default: '30000' },
+    'barge-in': { type: 'string' },
   },
 });
 const turns = values.turns.split('|').map((t) => t.trim()).filter(Boolean);
 const fakes = new Set(values.fake.split(',').map((s) => s.trim()).filter(Boolean));
 const turnTimeoutMs = Number(values['turn-timeout']);
+const bargeInMs = values['barge-in'] === undefined ? undefined : Number(values['barge-in']);
+/** Index of the turn the caller interrupts. */
+const bargedTurn = bargeInMs === undefined ? -1 : turns.length - 2;
+if (bargeInMs !== undefined && turns.length < 3) throw new Error('--barge-in needs at least 3 turns');
 const agentDir = fileURLToPath(new URL('..', import.meta.url));
 
 const SAMPLE_RATE = 48000;
@@ -105,7 +119,7 @@ async function main(): Promise<number> {
   // ---- agent worker ----
   const timings: Record<string, unknown>[] = [];
   const agentLogs: string[] = [];
-  const agent = spawn('pnpm', ['exec', 'tsx', 'src/agent.ts', 'start', '--log-level', 'info'], {
+  const agent = spawn('pnpm', ['exec', 'tsx', 'src/agent.ts', 'start', '--log-level', process.env.SIM_LOG_LEVEL ?? 'info'], {
     cwd: agentDir,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -172,6 +186,8 @@ async function main(): Promise<number> {
   let agentError = '';
   let lastAudioAt = 0;
   let firstAudioAt = 0;
+  /** Audible stretches of agent audio this turn ([start, end] ms epoch), split on ≥150 ms of silence. */
+  let bursts: [number, number][] = [];
   const agentText: string[] = [];
   let subtitleFirstAt = 0;
   let subtitleLastAt = 0;
@@ -190,7 +206,11 @@ async function main(): Promise<number> {
         let peak = 0;
         for (const v of frame.data) peak = Math.max(peak, Math.abs(v));
         if (peak > 500) {
-          lastAudioAt = Date.now();
+          const now = Date.now();
+          const last = bursts.at(-1);
+          if (last && now - last[1] < 150) last[1] = now;
+          else bursts.push([now, now]);
+          lastAudioAt = now;
           if (!firstAudioAt) firstAudioAt = lastAudioAt;
         }
       }
@@ -199,13 +219,17 @@ async function main(): Promise<number> {
   room.registerTextStreamHandler('lk.transcription', async (reader, info) => {
     if (info.identity === room.localParticipant?.identity) return;
     let text = '';
-    for await (const chunk of reader) {
-      const now = Date.now();
-      if (chunk.trim()) {
-        if (!subtitleFirstAt) subtitleFirstAt = now;
-        subtitleLastAt = now;
+    try {
+      for await (const chunk of reader) {
+        const now = Date.now();
+        if (chunk.trim()) {
+          if (!subtitleFirstAt) subtitleFirstAt = now;
+          subtitleLastAt = now;
+        }
+        text += chunk;
       }
-      text += chunk;
+    } catch {
+      // stream cut by an interruption or the disconnect at the end: keep what arrived
     }
     if (text.trim()) agentText.push(text.replaceAll('\uFEFF', ''));
   });
@@ -225,6 +249,8 @@ async function main(): Promise<number> {
     heard: string;
     clientLatencyMs?: number;
     audioMs: number;
+    /** Audible stretches relative to the end of the caller's speech: [startMs, durationMs]. */
+    bursts: [number, number][];
     /** First / last subtitle text relative to first / last audible agent audio (sync check). */
     subtitleStartVsAudioMs?: number;
     subtitleEndVsAudioMs?: number;
@@ -235,6 +261,7 @@ async function main(): Promise<number> {
     execFileSync('say', ['-v', values.voice, '-o', wav, `--data-format=LEI16@${SAMPLE_RATE}`, sentence]);
     const pcm = trimSilence(decodeWav(new Uint8Array(readFileSync(wav))).samples);
     firstAudioAt = 0;
+    bursts = [];
     subtitleFirstAt = 0;
     subtitleLastAt = 0;
     agentText.length = 0;
@@ -247,30 +274,38 @@ async function main(): Promise<number> {
     speech = frames;
     await spoken;
     const stoppedAt = Date.now();
+    // Agent audio heard while the caller was still talking (a barged-in filler) is not this turn's reply.
+    firstAudioAt = 0;
+    bursts = [];
 
     // Wait for the reply to finish: audio started and then 1.5s of silence, or an error, or timeout.
     const until = stoppedAt + turnTimeoutMs;
+    const bargeIn = i === bargedTurn;
     while (Date.now() < until) {
-      if (firstAudioAt && state() !== 'speaking' && Date.now() - lastAudioAt > 1500) break;
-      if (!firstAudioAt && agentError && state() === 'listening') break;
+      if (bargeIn && firstAudioAt && Date.now() - firstAudioAt >= (bargeInMs ?? 0)) break;
+      // The reply has subtitles, the filler has none: a silence after the filler is not the end.
+      if (firstAudioAt && subtitleFirstAt && state() !== 'speaking' && Date.now() - lastAudioAt > 1500) break;
+      if (agentError && state() === 'listening') break;
       await sleep(50);
     }
-    await sleep(300);
+    if (!bargeIn) await sleep(300);
     const heard = agentText.join(' / ');
     results.push({
       said: sentence,
       heard,
       clientLatencyMs: firstAudioAt ? firstAudioAt - stoppedAt : undefined,
       audioMs: firstAudioAt ? lastAudioAt - firstAudioAt : 0,
+      bursts: bursts.map(([a, b]) => [a - stoppedAt, b - a]),
       subtitleStartVsAudioMs: firstAudioAt && subtitleFirstAt ? subtitleFirstAt - firstAudioAt : undefined,
       subtitleEndVsAudioMs: firstAudioAt && subtitleLastAt ? subtitleLastAt - lastAudioAt : undefined,
       error: agentError,
     });
     out(
       `turn ${i + 1}: said "${sentence}" → ${firstAudioAt ? `audio after ${firstAudioAt - stoppedAt}ms` : 'NO AUDIO'}` +
+        ` (bursts ${JSON.stringify(results.at(-1)?.bursts)})` +
         `${heard ? `, subtitle "${heard}"` : ''}${agentError ? `, agent_error "${agentError}"` : ''}`,
     );
-    await sleep(800);
+    if (!bargeIn) await sleep(800);
   }
 
   await sleep(1000);
@@ -278,14 +313,58 @@ async function main(): Promise<number> {
   for (const t of timings) out(`  ${JSON.stringify(t)}`);
   out('\nsummary:');
   out(JSON.stringify({ results, timings }, null, 2));
-  const allAnswered = results.every((r) => r.clientLatencyMs !== undefined && r.heard);
+  const allAnswered = results.every((r, i) => i === bargedTurn || (r.clientLatencyMs !== undefined && r.heard));
   const expectFailure = Boolean(values.fail);
-  const ok = expectFailure ? results.every((r) => r.error) : allAnswered;
-  if (!ok) {
+  let ok = expectFailure ? results.every((r) => r.error) : allAnswered;
+  const problems = expectFailure ? [] : checkTurns(results, timings);
+  for (const p of problems) out(`CHECK FAILED: ${p}`);
+  ok &&= problems.length === 0;
+  if (!ok || process.env.SIM_DUMP) {
     out('\nFAILED — last agent log lines:');
-    for (const l of agentLogs.slice(-40)) out(`  ${l.slice(0, 400)}`);
+    for (const l of agentLogs.slice(process.env.SIM_DUMP ? 0 : -40)) out(`  ${l.slice(0, 400)}`);
   }
   return ok ? 0 : 1;
+}
+
+/** The fake LLM's reply to `said` as the caller should see it (tag removed). */
+const fakeReply = (said: string) => `收到，你说的是“${said}”。还想聊点什么？`;
+
+/**
+ * Per-turn checks on what the caller received:
+ * - subtitles: only the reply text, no `[...]` tag, no filler text (exact text with the fake LLM)
+ * - with a filler: the reply audio never cuts into it — first to last audible frame spans at least
+ *   filler + reply (one track, so an overlap would show up as a shortened filler or reply)
+ * - fillers: never the same one two turns in a row
+ */
+function checkTurns(
+  results: { said: string; heard: string; audioMs: number; bursts: [number, number][] }[],
+  timings: Record<string, unknown>[],
+): string[] {
+  const problems: string[] = [];
+  results.forEach((r, i) => {
+    const t = timings[i];
+    if (i === bargedTurn) {
+      // Interrupted during the filler: its reply must never be played.
+      if (!t?.filler || t.tPlayout !== undefined || t.reply) {
+        problems.push(`turn ${i + 1}: filler missing or reply played despite barge-in: ${JSON.stringify(t)}`);
+      }
+      return;
+    }
+    if (/[[\]【】]/u.test(r.heard)) problems.push(`turn ${i + 1}: subtitle has a tag: "${r.heard}"`);
+    if (fakes.has('llm') && r.heard !== fakeReply(r.said)) problems.push(`turn ${i + 1}: subtitle "${r.heard}" ≠ reply`);
+    if (!t || typeof t.filler !== 'string') return;
+    const fillerMs = Number(t.fillerAudioMs ?? 0);
+    const replyMs = Number(t.ttsAudioMs ?? 0);
+    const first = r.bursts[0];
+    const last = r.bursts.at(-1);
+    const span = first && last ? last[0] + last[1] - first[0] : 0;
+    // Quiet edges of the clips (fade in/out, below the detection threshold) are not counted.
+    if (span < fillerMs + replyMs - 300) {
+      problems.push(`turn ${i + 1}: agent audio spans ${span}ms, expected filler ${fillerMs}ms + reply ${replyMs}ms`);
+    }
+    if (i > 0 && timings[i - 1]?.filler === t.filler) problems.push(`turn ${i + 1}: filler ${t.filler} repeated`);
+  });
+  return problems;
 }
 
 /** Drops leading/trailing near-silence (say pads both ends), keeping 50 ms margins. */

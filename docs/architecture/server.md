@@ -130,6 +130,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 ### 预录语气词
 - 用同一个音色预先合成 5–10 条（“嗯…”“好的，”“我想想”等），按场景选用，避免每句都用而显得机械
 - 生成器在 `services/fillers/`，产物（48kHz 单声道 16-bit WAV + `manifest.json`）在 `assets/fillers/`；换音色后重新运行生成器即可
+- 接入方式见 §12「语气词」
 
 ## 9. 运维注意
 
@@ -178,10 +179,14 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 **链路**（`AGENT_PIPELINE=conversation`，默认；`apps/agent/src/pipelines/conversation.ts`）：§11 的 VAD + STT → LLM（`@livekit/agents-plugin-openai`，`baseURL` 指向 llama-server，`max_completion_tokens=150`）→ TTS 插件 `IndexTTS`（`apps/agent/src/tts/`）→ Agent 音轨（24kHz）。角色 system prompt 在 `apps/agent/prompts/character.md`，改文件即可，不用改代码。
 
 - **TTS 插件与后端接口**：插件对上层只暴露“文本 + 情绪 → 音频”（`synthesize(text)` 用平静，`synthesizeSegment({ text, emotion })` 带情绪）；后端实现 `TtsBackend.synthesize(segment, signal) → PCM`，由 `TTS_BACKEND` 选择。当前只有 `gradio`（WebUI `/gen_single`，参数按 `/gradio_api/info` 的默认值补齐，只覆盖情感方式、参考音频、文本、语言）。参考音频每个进程只上传一次，之后复用服务端路径；合成失败后下次重新上传。返回的 22.05kHz wav 解码后重采样到音轨采样率。#14 的 FastAPI 后端实现同一接口、在 `createTtsBackend` 里加一个分支即可。
-- **分句**：插件按 `。！？；!?;…` 和换行切句（`ZhSentenceTokenizer`），每句一个请求；请求在插件内串行（GPU 共享），不重试。#11 换成 Segmenter（首段在逗号处切）。
+- **分段**：插件的 `stream()` 把 LLM 文本流交给 `@ptoy/segmenter`（§8 规则，默认阈值：首段在第一个逗号处切），每段一个 `synthesizeSegment({ text, emotion })` 请求；请求在插件内串行（GPU 共享），不重试。Segmenter 是切分和情绪标签解析的唯一实现。
 - **取消**：打断或会话结束时中止请求、丢弃结果。Gradio 的 `/call` 接口不能取消已排队的任务，被取消的句子仍会在 GPU 上跑完。
-- **字幕**：用框架内置的播放同步（TTS 对齐的句级时间戳 + 按字速推进）。框架按空白切词，中文整句会被当成一个词一次性放出，所以 `transcriptionNode` 在每个中日文字符后插入 U+FEFF（会被当作空白、但不显示），字幕就能逐字跟随播放；写入对话历史前会去掉，网页显示前也会去掉。
-- **标签保护**：LLM 输出里的 `[...]` / `【...】`（10 字内闭合）在进入 TTS 和字幕前被去掉（`TagStripper`）。#11/#13 改由 Segmenter 解析。
+- **字幕**：用框架内置的播放同步（TTS 对齐的段级时间戳：每段的干净文本挂在该段第一帧上 + 按字速推进），字幕和写入历史的回复都来自这些段文本。框架按空白切词，中文整句会被当成一个词一次性放出，所以 `transcriptionNode` 在每个中日文字符后插入 U+FEFF（会被当作空白、但不显示），字幕就能逐字跟随播放；写入对话历史前会去掉，网页显示前也会去掉。
+- **标签**：LLM 输出里的 `[...]` / `【...】` 由 Segmenter 解析（合法情绪传给 TTS，非法丢弃），不进 TTS 文本、字幕和对话历史。LLM 看到的历史里没有标签；#13 若要模型持续输出标签，靠 system prompt 约束。
+- **语气词**（#11，`apps/agent/src/fillers/`）：`FILLERS_ENABLED`（默认开）、`FILLERS_MANIFEST`（默认仓库的 `assets/fillers/manifest.json`）。每个进程加载一次并重采样到音轨采样率。用户一轮结束（`onUserTurnCompleted`，即 EOU 时刻）就用 `session.say('', { audio, addToChatCtx: false })` 排一条语气词在正式回复之前；回复的 LLM/TTS 同时开始，播放在框架的 speech 队列里排在语气词之后，所以不会重叠：回复先好就等语气词放完，语气词先放完就静音等回复。
+  - 选组（`chooseFillerGroup`，按用户最终文本 + SenseVoice 情绪）：负面情绪（sad/angry/fearful/disgusted）或倾诉词（累、难过、烦、唉…）→ `empathy`；请求（帮我、能不能、…好不好）→ `ack`；提问（？、句末吗/呢、什么/怎么/为什么…）→ `thinking`；其余 → `ack`。组内随机，绝不与上一轮同一条（组内只剩上一条时换 `ack` 或任意一条）。
+  - 不进对话历史、不出字幕（文本为空）：LLM 不知道自己说过“好的，”，偶尔会在回复开头重复一次类似的话。
+  - 打断：语气词是普通可打断的 speech，用户开口按框架规则暂停/停止。用户在语气词期间（回复还没开始）连续说话满 500ms（`INTERRUPTION_MIN_SPEECH_MS`，与框架打断阈值相同）时，排队的回复直接丢弃（`FillerTurnGuard`），否则它会在用户的停顿里冒出半句、随后被新一轮打断。回复已经开始播放时按普通打断处理。框架有 3s 的 AEC 预热，通话中 AI 的前 3s 语音不可打断。
 - **故障**：LLM（重试 `LLM_MAX_RETRY` 次后）或 TTS 失败都会记 error 日志，并把提示写到 Agent 的参与者属性 `ptoy.agent_error`，网页在 AI 字幕位置显示；AI 下次开口时清空。`maxUnrecoverableErrors` 设为不限，模型服务挂掉时通话不会断。
 
 **每轮耗时日志**：每轮一条 info 日志，`msg` 为 `turn timing`，字段在 `turn` 对象里（`apps/agent/src/pipelines/turn-timing.ts`）。时长单位都是 ms；`t*` 是相对“用户停止说话”（VAD 判定的语音结束点，不含静音等待）的偏移。
@@ -194,14 +199,17 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 | `llmTtftMs` / `llmDurationMs` / `llmTokens` | LLM 首 token、总耗时、生成 token 数 | `llm_metrics` |
 | `ttsFirstMs` / `ttsFirstChars` / `ttsFirstAudioMs` | 第一句：请求到拿到音频（含排队）、字数、音频时长 | 第一条 `tts_metrics` |
 | `ttsSegments` / `ttsAudioMs` | 本轮合成句数、音频总时长 | `tts_metrics` 累加 |
-| `tLlmFirstToken` / `tTtsFirstAudio` / `tPlayout` | LLM 首 token、第一句音频就绪、开始播放的时间点 | 由上面的指标和 `agent_state_changed → speaking` 推算 |
-| `totalMs` | 用户停止说话 → 开始播放 AI 的第一帧音频（= `tPlayout`） | 同上 |
+| `filler` / `fillerAudioMs` | 本轮语气词 id（manifest）/ 时长 | 语气词选择 |
+| `fillerStartMs` | 用户停止说话 → 语气词开始播放 | 语气词的 `agent_state_changed → speaking` |
+| `tLlmFirstToken` / `tTtsFirstAudio` / `tPlayout` | LLM 首 token、第一段音频就绪、正式回复开始播放的时间点 | 由上面的指标和回复消息的 `startedSpeakingAt`（缺失时用 `agent_state_changed → speaking`）推算 |
+| `totalMs` | 用户停止说话 → 正式回复的第一帧音频开始播放（= `tPlayout`，在语气词之后） | 同上 |
+| `firstAudioMs` | 用户停止说话 → AI 的第一个声音（语气词或回复，取早者）：感知延迟 | `min(fillerStartMs, totalMs)` |
 | `interrupted` / `error` | 本轮是否被打断 / 失败的环节（`llm_error`、`tts_error`） | 会话事件 |
 | `user` / `reply` | 用户原话 / AI 实际说出的回复 | 转写、对话历史 |
 
 一轮在 AI 回复写入对话历史时结束；没有回复时（LLM 失败、开口前被打断）在下一轮开始或会话关闭时输出。
 
-**模拟通话**：`pnpm --filter @ptoy/agent sim:call -- --turns "你好|..."` 启动 Agent worker，用 macOS `say` 的中文语音当来电者逐轮说话，打印每轮收到的音频、字幕、`ptoy.agent_error` 和 `turn timing`；`--fake asr,llm,tts` 换成进程内假服务，`--fail llm|tts` 验证故障提示；设 `LIVEKIT_SERVER_BIN` 时自带一个临时 LiveKit。
+**模拟通话**：`pnpm --filter @ptoy/agent sim:call -- --turns "你好|..."` 启动 Agent worker，用 macOS `say` 的中文语音当来电者逐轮说话，打印每轮收到的音频（含按静音切开的音频段）、字幕、`ptoy.agent_error` 和 `turn timing`；`--fake asr,llm,tts` 换成进程内假服务，`--fail llm|tts` 验证故障提示，`--barge-in 150` 让来电者在倒数第二轮的语气词期间插话；设 `LIVEKIT_SERVER_BIN` 时自带一个临时 LiveKit。每轮检查：字幕不含标签（假 LLM 时与回复逐字相同）、语气词与回复的音频跨度不短于两者之和（无重叠/截断）、语气词不连续重复。
 
 **实测（Mac 经 Wi-Fi 调 Windows 的 LLM 和 TTS，ASR 跑在 Intel Mac CPU 上；按规则这组数据不作数，只用来看各段比例）**，6 轮连续对话，上下文连贯（第 5 轮记得名字，第 6 轮能概括前面聊过的话题）：
 
@@ -213,3 +221,5 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 | `totalMs` | 2727–4727 | 3815 |
 
 第一句的 TTS 耗时占了大头，并且和第一句字数成正比（5 字约 1.4s，22 字约 3.3s）。在 Windows 本机，ASR 约 0.1s、LLM 首 token 约 40ms，第一句短时能进 2.5s，长时进不了；要稳定达标需要 #11 的短首段和语气词，以及 #14 的 FastAPI。
+
+**#11 实测（同样是 Mac 经 Wi-Fi、ASR 跑在 Mac CPU，只看比例）**，6 轮：`fillerStartMs` 850–1011（中位 ~900，基本等于 `eouDelayMs` + 几 ms），即用户说完到听到声音约 0.9s，其中 550ms 是 VAD 静音、270–410ms 是 Mac 上的 ASR；`totalMs`（正式回复）2481–3496（中位 ~2.9s，#10 为 3.8s），首段 3–10 字、`ttsFirstMs` 1186–2087。语气词结束到回复开始的静音 116–1776ms（中位 ~1.1s）：Gradio 每段约 770ms 固定开销 + Wi-Fi，首段再短也要 1.2s 以上；首段之后的短段同理，段间会有可感知的停顿。Windows 本机（ASR ~0.1s）和 #14 的 FastAPI 后端预计各省 0.3–0.5s，届时复测。

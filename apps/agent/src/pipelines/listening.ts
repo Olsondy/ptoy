@@ -9,6 +9,9 @@ import { AsrError, type AsrTranscript, SenseVoiceSTT } from '../stt/sensevoice.j
  */
 export const ATTRIBUTE_STT_ERROR = 'ptoy.stt_error';
 
+/** Caller speech this long interrupts the agent (the framework default, pinned so fillers can share it). */
+export const INTERRUPTION_MIN_SPEECH_MS = 500;
+
 /**
  * Silero VAD and the `v1-mini` end-of-turn model both run in-process via `@livekit/local-inference`
  * (prebuilt for darwin-x64/arm64 and win32-x64; the worker preloads the weights). Nothing here
@@ -21,7 +24,7 @@ export function createTurnTaking(config: CallConfig) {
     turnDetection,
     endpointing: { minDelay: config.endpointingMinDelayMs, maxDelay: config.endpointingMaxDelayMs },
     // Plain VAD interruption: 'adaptive' would call LiveKit Cloud.
-    interruption: { mode: 'vad' },
+    interruption: { mode: 'vad', minDuration: INTERRUPTION_MIN_SPEECH_MS },
   } as const;
   return { vad, turnHandling } as const;
 }

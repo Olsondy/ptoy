@@ -1,4 +1,4 @@
-import { initializeLogger, tts } from '@livekit/agents';
+import { USERDATA_TIMED_TRANSCRIPT, initializeLogger, tts } from '@livekit/agents';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -94,18 +94,30 @@ describe('IndexTTS plugin audio', () => {
     expect(audio.ms).toBeLessThan(7 * FAKE_MS_PER_CHAR + 10);
   });
 
-  it('stream() synthesizes each Chinese sentence separately, one request at a time', async () => {
-    const { gradio, plugin } = await setup({ synthMs: 40 });
+  it('stream() segments the reply: short first segment, tags parsed out, one request at a time', async () => {
+    const { gradio, plugin } = await setup({ synthMs: 40 }, { emotionControl: 'vector' });
     const stream = plugin.stream();
-    for (const t of ['你好', '呀。今天', '过得怎么样？', '我挺好的！']) stream.pushText(t);
+    for (const t of ['[喜', ']好呀', '，今天', '过得怎么样？', '[哀]我', '有点累。']) stream.pushText(t);
     stream.endInput();
     let samples = 0;
+    const timed: { text: string; startTime?: number }[] = [];
     for await (const ev of stream) {
       if (ev === tts.SynthesizeStream.END_OF_STREAM) break;
       samples += ev.frame.samplesPerChannel;
+      const t = ev.frame.userdata[USERDATA_TIMED_TRANSCRIPT] as { text: string; startTime?: number }[] | undefined;
+      if (t) timed.push(...t);
     }
-    expect(gradio.calls.map((c) => c.text)).toEqual(['你好呀。', '今天过得怎么样？', '我挺好的！']);
+    expect(gradio.calls.map((c) => c.text)).toEqual(['好呀，', '今天过得怎么样？', '我有点累。']);
+    // [喜] applies to its sentence (both segments before the 。/？), [哀] to the last one.
+    expect(gradio.calls.map((c) => [c.vec1, c.vec3])).toEqual([
+      [1, 0],
+      [1, 0],
+      [0, 1],
+    ]);
     expect(gradio.maxConcurrent).toBe(1);
+    expect(timed.map((t) => t.text)).toEqual(['好呀，', '今天过得怎么样？', '我有点累。']);
+    // Each transcript starts where the previous segment's audio ended (fake: 100 ms per char).
+    expect(timed.map((t) => Math.round((t.startTime ?? 0) * 10) / 10)).toEqual([0, 0.3, 1.1]);
     expect(samples).toBeGreaterThan(0);
   });
 });

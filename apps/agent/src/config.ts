@@ -86,6 +86,9 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
 /** Character system prompt shipped with the agent (edit the file, not the code). */
 export const DEFAULT_CHARACTER_PROMPT_FILE = fileURLToPath(new URL('../prompts/character.md', import.meta.url));
 
+/** Pre-recorded fillers shipped in the repo (services/fillers generates them). */
+export const DEFAULT_FILLERS_MANIFEST = fileURLToPath(new URL('../../../assets/fillers/manifest.json', import.meta.url));
+
 const conversationSchema = z.object({
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   LLM_MODEL: z.string().min(1).default('qwen3-8b'),
@@ -103,6 +106,11 @@ const conversationSchema = z.object({
   TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('reference'),
   TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   AGENT_AUDIO_SAMPLE_RATE: z.coerce.number().int().positive().default(24000),
+  FILLERS_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+  FILLERS_MANIFEST: z.string().min(1).default(DEFAULT_FILLERS_MANIFEST),
 });
 
 export interface LlmConfig {
@@ -135,6 +143,8 @@ export interface ConversationConfig extends CallConfig {
   readonly characterPromptFile: string;
   /** Sample rate of the agent's published audio track; TTS output is resampled to it. */
   readonly audioSampleRate: number;
+  /** Play a pre-recorded filler when a user turn ends (`undefined` = disabled). */
+  readonly fillers?: { readonly manifestPath: string };
 }
 
 export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): ConversationConfig {
@@ -166,5 +176,6 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     },
     characterPromptFile: e.CHARACTER_PROMPT_FILE,
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
+    fillers: e.FILLERS_ENABLED ? { manifestPath: e.FILLERS_MANIFEST } : undefined,
   };
 }
