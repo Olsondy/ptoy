@@ -257,6 +257,23 @@ class IndexTtsEngine:
                 sys.path.append(p)
         os.chdir(cfg.indextts_dir)
 
+        if not os.path.isdir(cfg.model_dir):
+            raise FileNotFoundError(
+                f"model dir not found: {cfg.model_dir} (set TTS_MODEL_DIR to the WebUI --model_dir)"
+            )
+        # webui.py writes/downloads config.yaml into the model dir before loading; do the same.
+        try:
+            from indextts.utils.model_download import ensure_config_available
+        except ImportError:
+            ensure_config_available = None
+        if ensure_config_available is not None:
+            ensure_config_available(cfg.model_dir, version=cfg.version)
+        if not os.path.isfile(os.path.join(cfg.model_dir, "config.yaml")):
+            raise FileNotFoundError(
+                f"config.yaml not found in {cfg.model_dir}; set TTS_MODEL_DIR to the directory the WebUI uses"
+                " (its --model_dir, default <IndexTTS>/checkpoints)"
+            )
+
         import torch
 
         self._torch = torch

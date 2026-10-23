@@ -97,10 +97,22 @@ class EngineTest(unittest.TestCase):
             w.setsampwidth(2)
             w.setframerate(RATE)
             w.writeframes(b"\0\0" * 100)
+        os.makedirs(os.path.join(self.dir, "checkpoints"))
+        with open(os.path.join(self.dir, "checkpoints", "config.yaml"), "w") as f:
+            f.write("fake: true\n")
 
     def engine(self, **env):
         base = {"INDEXTTS_DIR": self.dir, "TTS_REF_AUDIO": self.ref}
         return IndexTtsEngine(EngineConfig.from_env({**base, **env}))
+
+    def test_missing_config_yaml_names_the_model_dir(self):
+        os.remove(os.path.join(self.dir, "checkpoints", "config.yaml"))
+        with self.assertRaisesRegex(FileNotFoundError, "TTS_MODEL_DIR"):
+            self.engine()
+
+    def test_missing_model_dir_is_reported(self):
+        with self.assertRaisesRegex(FileNotFoundError, "model dir not found"):
+            self.engine(TTS_MODEL_DIR=os.path.join(self.dir, "nope"))
 
     def test_builds_model_with_supported_kwargs_and_warms_up_in_memory(self):
         e = self.engine(TTS_MODEL_VERSION="2")
