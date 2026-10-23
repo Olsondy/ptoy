@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { RoomAudioRenderer, RoomContext } from '@livekit/components-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CallControls } from './CallControls';
+import { CaptionsToggle } from './CaptionsToggle';
 import { CallTranscript } from './CallTranscript';
 import { CharacterPicker } from './CharacterPicker';
 import { CallOrb } from './orb/CallOrb';
@@ -28,7 +29,10 @@ export function App() {
             <p className="call-status" data-testid="call-status" data-status={call.status} aria-live="polite">
               <span className={`dot dot-${call.status}`} aria-hidden="true" />{STATUS_LABEL[call.status]}
             </p>
-            <div className="call-header-actions"><CharacterPicker {...characters} disabled={inCall} /></div>
+            <div className="call-header-actions">
+              <CharacterPicker {...characters} disabled={inCall} />
+              <CaptionsToggle visible={captions} onVisibleChange={setCaptions} />
+            </div>
           </header>
           <section className="call-stage" aria-label="语音通话">
             <CallOrb room={call.room} status={call.status} />
@@ -42,7 +46,6 @@ export function App() {
             </div>
           </section>
           <CallControls status={call.status} error={call.error}
-            captions={captions} onCaptionsChange={setCaptions}
             onToggle={inCall ? call.stop : () => void call.start(characters.selectedId)} />
           {call.room && <RoomAudioRenderer />}
         </main>

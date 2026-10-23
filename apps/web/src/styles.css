@@ -28,12 +28,18 @@
   --call-type-secondary: 0.875rem;
   --call-type-label: 0.75rem;
   --call-control-size: 2.25rem;
-  --call-control-ink: #1b1c1e;
-  --call-control-fill: #d9dadd;
-  --call-control-hover: #eeeef0;
-  --call-end-ink: #211013;
-  --call-end-fill: #db777e;
-  --call-end-hover: #e98b92;
+  --call-target-size: 44px;
+  --call-caption-size: 1.75rem;
+  --call-phone-icon-size: 18px;
+  --call-header-icon-size: 18px;
+  --call-header-icon-stroke: 1.5;
+  --call-icon-stroke: 1.8;
+  --call-control-ink: #c4c6cc;
+  --call-control-fill: #24262a;
+  --call-control-hover: #2d3035;
+  --call-end-ink: #dc9a9f;
+  --call-end-fill: #302125;
+  --call-end-hover: #3b272c;
   --call-control-selected: #292a2e;
   --border: #ffffff14;
   --input: #ffffff20;
@@ -98,9 +104,11 @@ button, a { -webkit-tap-highlight-color: transparent; }
   align-items: center;
   min-height: 44px;
 }
-.call-wordmark { font-size: 1.25rem; font-weight: 550; line-height: 1; letter-spacing: -0.03em; }
+/* Compensate for the wordmark's descenders when aligning its visible ink. */
+.call-wordmark { font-size: 1.25rem; font-weight: 550; line-height: 1; letter-spacing: -0.03em; transform: translateY(-1px); }
 .call-wordmark > span { color: var(--muted-foreground); }
-.call-header-actions { display: flex; justify-content: flex-end; min-height: 44px; }
+.call-header-actions { display: flex; justify-content: flex-end; align-items: center; gap: 4px; min-height: 44px; }
+.call-header-actions svg { width: var(--call-header-icon-size); height: var(--call-header-icon-size); stroke-width: var(--call-header-icon-stroke); }
 .call-status { display: flex; align-items: center; gap: 8px; font-size: var(--call-type-label); line-height: 1.5; color: var(--muted-foreground); }
 .dot { width: 5px; height: 5px; border-radius: 50%; background: #777983; }
 .dot-connecting { background: #d5b47b; }
@@ -137,43 +145,52 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .control-icon {
   position: relative;
   isolation: isolate;
-  min-height: 44px;
-  height: 44px;
+  min-height: var(--call-target-size);
+  height: var(--call-target-size);
   border: 0;
   border-radius: 999px;
   background: transparent;
   transition: color 160ms ease, transform 160ms ease;
 }
-/* Small circular surfaces sit inside 44px touch targets. */
+/* Visible circles stay compact while touch targets grow independently. */
 .call-toggle::before,
 .control-icon::before {
   content: '';
   position: absolute;
-  inset: 8px 0;
   z-index: -1;
   border-radius: inherit;
   transition: background-color 160ms ease;
 }
-.call-toggle { width: 44px; min-width: 44px; padding: 0; color: var(--call-control-ink); }
-.call-toggle::before { inset: calc((44px - var(--call-control-size)) / 2); background: var(--call-control-fill); }
-.call-toggle:hover::before { background: var(--call-control-hover); }
-.call-toggle svg { width: 18px; height: 18px; stroke-width: 1.6; }
+.call-toggle { width: var(--call-target-size); min-width: var(--call-target-size); padding: 0; color: var(--call-control-ink); }
+.call-toggle::before { inset: calc((var(--call-target-size) - var(--call-control-size)) / 2); background: var(--call-control-fill); }
+.call-toggle svg { width: var(--call-phone-icon-size); height: var(--call-phone-icon-size); stroke-width: var(--call-icon-stroke); }
 .call-toggle.is-active { color: var(--call-end-ink); }
 .call-toggle.is-active::before { background: var(--call-end-fill); }
-.call-toggle.is-active:hover::before { background: var(--call-end-hover); }
-.call-toggle:active { transform: scale(0.97); }
-.control-icon { width: 44px; padding: 0; flex-shrink: 0; color: var(--muted-foreground); }
-.control-icon::before { inset-inline: 8px; }
-.control-icon svg { width: 16px; height: 16px; stroke-width: 1.6; }
-.control-icon:hover,
+.call-toggle:active,
+.control-icon:active { transform: scale(0.94); }
+.control-icon { width: var(--call-target-size); padding: 0; flex-shrink: 0; color: var(--muted-foreground); }
+.control-icon::before { inset: calc((var(--call-target-size) - var(--call-caption-size)) / 2); }
 .control-icon[aria-pressed="true"] { color: var(--foreground); }
-.control-icon:hover::before,
-.control-icon[aria-pressed="true"]::before { background: var(--call-control-selected); }
+.captions-toggle { --call-target-size: 44px; }
 .call-toggle:hover,
 .control-icon:hover,
 .control-icon[aria-pressed="true"] { background: transparent; }
 .control-icon:disabled { opacity: 0.35; }
-.call-controls :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; box-shadow: none; }
+.call-controls :focus-visible,
+.captions-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; box-shadow: none; }
+@media (hover: hover) and (pointer: fine) {
+  .call-toggle:hover::before { background: var(--call-control-hover); }
+  .call-toggle.is-active:hover::before { background: var(--call-end-hover); }
+  .control-icon:hover { color: var(--foreground); }
+  .control-icon:hover::before { background: var(--call-control-selected); }
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .call {
+    --call-target-size: 48px;
+    --call-phone-icon-size: 22px;
+    --call-icon-stroke: 2;
+  }
+}
 
 .transcript-area { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .conversation-state { color: var(--muted-foreground); font-size: var(--call-type-label); line-height: 1.5; }
@@ -200,10 +217,21 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .caption-line { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 12px; padding-inline: 0; }
 }
 @media (max-height: 650px) {
-  .call { padding-block: 12px; }
+  .call { padding-block: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-bottom)); }
   .call-stage { padding-top: 12px; gap: 8px; }
   .call-conversation { min-height: 160px; }
   .call-footer { gap: 10px; }
+}
+@media (max-height: 500px) and (min-width: 480px) and (orientation: landscape) {
+  .call-stage {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr);
+    gap: 20px;
+    padding-block: 12px;
+  }
+  .orb-slot { justify-self: center; }
+  .call-conversation { min-height: 0; }
+  .call-welcome { padding-block: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }

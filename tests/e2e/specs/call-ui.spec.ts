@@ -133,7 +133,7 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
     await agent.setAttributes({ 'ptoy.agent_error': '', 'ptoy.stt_error': '' });
     await expect(page.getByTestId('transcript-open')).toHaveCount(0);
     await expect(page.getByTestId('microphone-toggle')).toHaveCount(0);
-    await expect(page.getByRole('group', { name: '通话控制' }).getByRole('button')).toHaveCount(2);
+    await expect(page.getByRole('group', { name: '通话控制' }).getByRole('button')).toHaveCount(1);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('connected-mobile.png') });

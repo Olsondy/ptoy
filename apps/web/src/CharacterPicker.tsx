@@ -28,7 +28,7 @@ export function CharacterPicker({ options, selectedId, select, disabled }: Chara
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="size-11 rounded-full text-muted-foreground"
           aria-label={label} title={label} disabled={disabled} data-testid="character-picker">
-          <UsersRound className="size-5" strokeWidth={1.5} aria-hidden="true" />
+          <UsersRound aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={10} collisionPadding={16}
