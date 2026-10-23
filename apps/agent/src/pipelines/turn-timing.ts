@@ -31,6 +31,8 @@ export interface TurnTiming {
   readonly fillerAudioMs?: number;
   /** User stopped speaking → filler audio started playing. */
   readonly fillerStartMs?: number;
+  /** The filler was held back and skipped: the reply's audio was ready within FILLER_DELAY_MS. */
+  readonly fillerSkipped?: boolean;
   readonly tLlmFirstToken?: number;
   readonly tTtsFirstAudio?: number;
   readonly tPlayout?: number;
@@ -65,6 +67,7 @@ interface PendingFiller {
   id: string;
   audioMs: number;
   startedAt?: number;
+  skipped?: boolean;
 }
 
 const round = (v: number | undefined) => (v === undefined ? undefined : Math.round(v));
@@ -144,6 +147,12 @@ export class TurnTimingTracker {
     this.#pendingFiller = { id, audioMs };
   }
 
+  /** The scheduled filler was skipped (reply audio ready first); may come after `eou_metrics`. */
+  onFillerSkipped(): void {
+    const filler = this.#pendingFiller ?? this.#current?.filler;
+    if (filler) filler.skipped = true;
+  }
+
   /** The scheduled filler started playing (agent state → speaking). */
   onFillerStart(at: number): void {
     const filler = this.#pendingFiller ?? this.#current?.filler;
@@ -211,6 +220,7 @@ export class TurnTimingTracker {
       filler: turn.filler?.id,
       fillerAudioMs: turn.filler?.audioMs,
       fillerStartMs: fillerStart,
+      fillerSkipped: turn.filler?.skipped || undefined,
       tLlmFirstToken: llm && llmStart !== undefined ? at(llmStart + llm.ttftMs) : undefined,
       tTtsFirstAudio: tts && ttsStart !== undefined && tts.ttfbMs >= 0 ? at(ttsStart + tts.ttfbMs) : undefined,
       tPlayout: replyStart,

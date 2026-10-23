@@ -10,13 +10,21 @@ import {
   log,
   voice,
 } from '@livekit/agents';
+import type { AudioFrame } from '@livekit/rtc-node';
 import type { Emotion } from '@ptoy/segmenter';
 import { existsSync } from 'node:fs';
 import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
 import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
 import { createLlm } from '../llm/index.js';
-import { type Filler, type FillerBank, fillerAudio, fillerManifestPath, loadFillerBank } from '../fillers/bank.js';
+import {
+  type Filler,
+  type FillerBank,
+  fillerAudio,
+  fillerGate,
+  fillerManifestPath,
+  loadFillerBank,
+} from '../fillers/bank.js';
 import { FillerTurnGuard } from '../fillers/turn.js';
 import { IndexTTS, TtsError, createTtsBackend } from '../tts/index.js';
 import { isBackchannel } from './backchannel.js';
@@ -72,7 +80,11 @@ interface FillerHooks {
   readonly bank: FillerBank;
   /** SenseVoice emotion of the turn's last utterance. */
   readonly asrEmotion: () => string | undefined;
+  /** Hold the filler this long after the turn ends; skip it if the reply's audio is ready by then. */
+  readonly delayMs: number;
   readonly onPlay: (filler: Filler, handle: voice.SpeechHandle) => void;
+  /** The filler was skipped: the reply's first audio was ready within `delayMs`. */
+  readonly onSkip: (filler: Filler) => void;
 }
 
 /**
@@ -84,6 +96,8 @@ interface FillerHooks {
 class CharacterAgent extends voice.Agent {
   readonly #fillers: FillerHooks | undefined;
   readonly #toneOf: (userText: string) => Emotion;
+  /** Signals the current turn's reply audio is ready (first TTS frame); set per filler turn. */
+  #replyAudioReady: (() => void) | undefined;
 
   constructor(options: voice.AgentOptions<unknown>, toneOf: (userText: string) => Emotion, fillers?: FillerHooks) {
     super(options);
@@ -102,18 +116,45 @@ class CharacterAgent extends voice.Agent {
 
   /**
    * Runs right before the reply is generated: queue a filler ahead of it. The reply's LLM and TTS
-   * start immediately anyway; its playout waits in the speech queue until the filler has played
-   * (no overlap), and if the filler is shorter the caller just hears silence until the reply.
+   * start immediately anyway; its playout waits in the speech queue until the filler is done
+   * (no overlap). The filler's audio holds for `delayMs` first: if the reply's first audio is
+   * ready by then the filler ends without a sound (only a slow reply gets one); a filler right at
+   * the end of every turn sounded like the agent jumping in.
    * The filler is a normal interruptible speech: user speech pauses/stops it like any reply.
    * It is not added to the chat history (`addToChatCtx: false`) and has no subtitle (empty text).
    */
   override async onUserTurnCompleted(_chatCtx: ChatContext, newMessage: ChatMessage): Promise<void> {
+    this.#replyAudioReady = undefined;
     const hooks = this.#fillers;
     if (!hooks) return;
     const filler = hooks.bank.next(newMessage.textContent ?? '', hooks.asrEmotion());
     if (!filler) return;
-    const handle = this.session.say('', { audio: fillerAudio(filler), addToChatCtx: false, allowInterruptions: true });
+    const replyAudio = new Promise<void>((resolve) => (this.#replyAudioReady = resolve));
+    const play = fillerGate(hooks.delayMs, replyAudio);
+    const handle = this.session.say('', {
+      audio: fillerAudio(filler, play),
+      addToChatCtx: false,
+      allowInterruptions: true,
+    });
     hooks.onPlay(filler, handle);
+    void play.then((played) => {
+      if (!played && !handle.interrupted) hooks.onSkip(filler);
+    });
+  }
+
+  /** Reply audio passes through unchanged; its first frame tells a held filler to stand down. */
+  override async ttsNode(text: ReadableStream<string> | AsyncIterable<string>, modelSettings: ModelSettings) {
+    const ready = this.#replyAudioReady;
+    const audio = await voice.Agent.default.ttsNode(this, text, modelSettings);
+    if (!audio || !ready) return audio;
+    return audio.pipeThrough(
+      new TransformStream<AudioFrame, AudioFrame>({
+        transform(frame, controller) {
+          ready();
+          controller.enqueue(frame);
+        },
+      }),
+    );
   }
 
   override async transcriptionNode(
@@ -196,10 +237,15 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   const fillerHooks: FillerHooks | undefined = fillerBank && {
     bank: fillerBank,
     asrEmotion: () => asrEmotion,
+    delayMs: config.fillers?.delayMs ?? 0,
     onPlay: (f, handle) => {
       fillerGuard.fillerQueued(handle);
       timing.onFiller(f.id, f.durationMs);
       logger.debug({ filler: f.id, group: f.group, text: f.text, durationMs: f.durationMs }, 'filler queued');
+    },
+    onSkip: (f) => {
+      timing.onFillerSkipped();
+      logger.debug({ filler: f.id }, 'reply audio ready first, filler skipped');
     },
   };
 
