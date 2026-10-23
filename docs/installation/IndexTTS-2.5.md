@@ -138,7 +138,7 @@ $env:NO_PROXY = 'localhost,127.0.0.1'
 $env:INDEXTTS_DIR  = 'D:\Development\IndexTTS'
 $env:TTS_MODEL_DIR = 'D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
 $env:TTS_VOICES_DIR    = 'D:\Development\IndexTTS\prompts\voices'
-$env:TTS_DEFAULT_VOICE = 'default-relaxing'
+$env:TTS_DEFAULT_VOICE = 'xiaoyou-default'
 
 Write-Host "IndexTTS code: $env:INDEXTTS_DIR"
 Write-Host "Model weights: $env:TTS_MODEL_DIR"
@@ -156,7 +156,7 @@ finally {
 
 启动脚本所在目录不决定模型或代码的位置。`INDEXTTS_DIR` 指向执行推理的程序，`TTS_MODEL_DIR` 指向模型权重；启动模型就是由程序读取权重并执行推理。API 日志中的 `loading IndexTTS2 from ...` 表示代码目录，后面的 `model dir ...` 才表示权重目录。服务为兼容模型代码里的相对路径，会切换 Python 子进程的工作目录，这不会改变外层 PowerShell 的目录。
 
-`voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，当前是 `default-relaxing.wav`（小悠，素材包“治愈放松女声”截到 12.3s）和 `gentle.wav`（知夏）。增删音色后重启服务（ADR 0008）。
+`voices` 目录里每个音色一个 `<id>.wav`，id 要和角色文件（`apps/agent/prompts/characters/*.md`）的 `voice:` 一致，当前是 `xiaoyou-default.wav`（小悠）和 `zhixia.wav`（知夏）。增删音色后重启服务（ADR 0008）。
 
 服务默认与当前 WebUI 配置一致：v2.5、半精度（BF16）、不加载 QwenEmotion、`num_beams=1`。`TTS_MODEL_DIR` 必须指向上面的模型目录；不设置时会去 `<INDEXTTS_DIR>\checkpoints` 找 `config.yaml`。
 
