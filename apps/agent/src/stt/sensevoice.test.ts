@@ -89,6 +89,7 @@ describe('SenseVoiceSTT request', () => {
     expect(req.contentType).toMatch(/^multipart\/form-data; boundary=/);
     const { form, file, wav, samples } = await sentForm(req);
     expect(form.get('response_format')).toBe('json');
+    expect(form.get('language')).toBe('zh');
     expect(file.type).toBe('audio/wav');
     expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
     expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
