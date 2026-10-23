@@ -26,6 +26,17 @@
 - 提交说明和 PR 描述不加任何 AI 署名（不加 `Co-Authored-By: Claude ...`，也不加 "Generated with Claude Code"）；派生的子 Agent 同样适用
 - 所有提交（包括合并提交）都用本机 git 身份（`user.name` / `user.email`）。合并 PR 在本地 `git merge --no-ff` 后推送，不用 `gh pr merge` 或网页按钮（那样作者会变成 GitHub 账号的显示名）
 
+## 前端 UI 组件约定
+
+- 通用交互组件统一使用 **shadcn/ui**，当前基于 Radix + Tailwind CSS v4；配置以 `apps/web/components.json` 为准。不要随意引入其他组件库、混用另一套基础组件或为相同交互另写一套组件。
+- 添加组件：在 `apps/web` 中执行 `pnpm exec shadcn add <component>`，使用官方 registry，按需添加。新增第三方组件或动效库必须有明确需求，优先组合已有 shadcn 组件，不为视觉效果增加依赖。
+- 基础组件源码放在 `apps/web/src/components/ui/`，工具函数放在 `src/lib/`，通过 `@/components/ui/…` 引用；业务组合（通话控制、角色选择、字幕）留在业务组件中。更新 registry 代码前检查本地定制，不直接覆盖。
+- 按钮使用 `Button`，字幕开关使用 `Toggle`，角色选择使用 `DropdownMenu` 的单选项，图标提示使用 `Tooltip`。图标统一使用已安装的 `lucide-react`，不再添加图标库。
+- 颜色、圆角、字体等统一维护在 `src/styles.css` 的语义变量中，布局可组合 Tailwind 与业务 CSS。保留组件的键盘操作、焦点恢复、无障碍名称和状态；图标按钮提供中文名称，触摸热区至少 44px，尊重 reduced-motion。
+- 现有 Canvas 球体和 LiveKit 音频逻辑属于业务能力，保持独立。过渡动画优先 CSS；未经明确需求，不引入 Motion、GSAP 或另一套通话 UI。
+- UI 优化只调整已确认功能，不擅自增加静音、对话记录等功能或占位入口；当前底部只保留紧凑的开始／挂断按钮与字幕开关。
+- 通话 UI 验收覆盖：连接/挂断、实时字幕及其开关、隐藏字幕时的错误提示、角色菜单键盘操作，以及手机窄屏布局。
+
 ## Agent skills
 
 ### Issue tracker

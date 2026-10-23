@@ -4,7 +4,13 @@ Playwright 用 Chrome 假麦克风（`--use-fake-ui-for-media-stream --use-fake-
 
 开始通话 → `通话中` → Agent 进房（页面出现并播放 Agent 的回声音轨）→ 挂断 → `已断开`
 
-只断言用户可见的 DOM（`data-testid="call-status"` 的文本与 `data-status`、`call-toggle` 文案、`call-error` 不出现、`<audio>` 在播放）。
+通话冒烟测试断言状态、按钮、错误提示与回声音轨播放。UI 用例另外覆盖：
+
+- 角色菜单键盘选择、Escape 关闭、焦点恢复、保存选择及手机窄屏。
+- 发送 `lk.transcription` 流验证双方字幕、分段修订、字幕开关、重新显示最新发言、错误提示独立显示与挂断清空。
+- 截图保存于 `test-results/`，用于检查桌面、手机、角色菜单及紧凑控制栏。截图内的对话由测试夹具生成，不调用 GPU 模型。
+
+测试夹具复用 Agent 已有的 `@livekit/rtc-node` 与 `livekit-server-sdk` 版本，作为本测试包的开发依赖；不进入前端产物。
 
 单独成包而不放进 `apps/web`：测试同时依赖 web、agent、token 服务和 LiveKit，属于跨应用的端到端测试；也让 Playwright 不进入 web 的依赖。脚本名是 `test:e2e` 而不是 `test`，所以默认的 `pnpm test` 不会跑它（它需要外部进程）。
 

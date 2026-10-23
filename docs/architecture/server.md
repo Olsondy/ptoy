@@ -59,12 +59,20 @@
 | 决策 | 选择 | 理由 |
 |---|---|---|
 | 传输层 | LiveKit（WebRTC） | 内置打断、AEC、播放位置追踪、字幕同步，不用自己在 Node 里搭 WebRTC |
-| 前端 | React | LiveKit 有现成的 React 组件和 hooks |
+| 前端 | React + Vite，shadcn/ui（Radix）+ Tailwind CSS v4 | LiveKit hooks 管音轨与字幕；shadcn/ui 管通用控件，组件源码放在 `apps/web/src/components/ui/` |
 | ASR | SenseVoice-Small，跑在 CPU 上 | 模型小、非自回归，VAD 切出整句后识别只要几十到一百多毫秒；附带情绪标签；把 GPU 留给 LLM 和 TTS |
 | 不用 Gemini Flash 当 ASR | — | 非流式、多一次云端往返（0.5–1.5s+）、可能直接回答而不是转写、境外网络不稳 |
 | 不换 Qwen2.5-Omni | — | 能听出语气，但识别粗；发声模块音色固定，没法控制情绪；文本能力比 Qwen3-8B 弱。换来的只有“直接听音频”这一点，不划算 |
 | 语气感知 | 情绪标签链路 | SenseVoice 情绪标签写进 prompt → Qwen3-8B 给每句话加情绪标签 → Segmenter 解析 → IndexTTS2 按情绪合成 |
 | TTS | IndexTTS2 | 音色克隆加情绪控制。整句合成，不支持流式，首句延迟靠短首段和语气词掩盖 |
+
+### 通话页面 UI
+
+- 深灰中性色、低干扰边界与轻量 CSS 过渡，参考 Agent Wave；保留现有 Canvas 球体及听／想／说状态和音量驱动，不引入额外图形或动效库。
+- 角色选择位于右上角，以 shadcn `DropdownMenu` 单选项呈现；拨号后锁定。
+- 底部控制栏仅保留紧凑的开始／挂断按钮与字幕开关，不增加静音、对话记录等额外功能。
+- 字幕默认显示最近的双方发言，长字幕显示末尾正在说的内容；关闭字幕不停止接收，重新打开时显示最新发言。服务错误独立显示，不因关闭字幕而隐藏。
+- UI 组件使用规范以根目录 `AGENTS.md` 为准。
 
 ## 5. llama-server 配置
 

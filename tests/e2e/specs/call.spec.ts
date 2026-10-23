@@ -11,13 +11,13 @@ test('call toggle: connect → 通话中 → agent audio → hang up → 已断�
 
   await expect(status).toHaveAttribute('data-status', 'disconnected');
   await expect(status).toHaveText('已断开');
-  await expect(toggle).toHaveText('开始通话');
+  await expect(toggle).toHaveAccessibleName('开始通话');
 
   await toggle.click();
 
   await expect(status).toHaveAttribute('data-status', 'connected');
   await expect(status).toHaveText('通话中');
-  await expect(toggle).toHaveText('挂断');
+  await expect(toggle).toHaveAccessibleName('挂断');
   await expect(page.getByTestId('call-error')).toHaveCount(0);
 
   // The agent joining is observable as its echo track being played back on the page.
@@ -33,7 +33,7 @@ test('call toggle: connect → 通话中 → agent audio → hang up → 已断�
 
   await expect(status).toHaveAttribute('data-status', 'disconnected');
   await expect(status).toHaveText('已断开');
-  await expect(toggle).toHaveText('开始通话');
+  await expect(toggle).toHaveAccessibleName('开始通话');
   await expect(page.getByTestId('call-error')).toHaveCount(0);
   await expect(agentAudio).toHaveCount(0);
 });
