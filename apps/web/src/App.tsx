@@ -1,4 +1,5 @@
 import { RoomAudioRenderer, RoomContext } from '@livekit/components-react';
+import { AgentSubtitle } from './AgentSubtitle';
 import { CallOrb } from './orb/CallOrb';
 import { UserSubtitle } from './UserSubtitle';
 import { type CallStatus, useCall } from './useCall';
@@ -24,7 +25,10 @@ export function App() {
 
       {call.room && (
         <RoomContext.Provider value={call.room}>
-          <UserSubtitle />
+          <div className="subtitles">
+            <AgentSubtitle />
+            <UserSubtitle />
+          </div>
         </RoomContext.Provider>
       )}
 
