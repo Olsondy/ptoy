@@ -6,8 +6,6 @@ export interface Speech {
 }
 
 export interface FillerTurnGuardOptions {
-  /** Caller speech this long while the reply is still queued drops the reply (= interruption `minDuration`). */
-  readonly minSpeechMs: number;
   /** The filler's first audio played (agent state → speaking), `at` = event time. */
   readonly onFillerStart?: (at: number) => void;
   /** The queued reply was dropped because the caller talked over the filler. */
@@ -25,11 +23,12 @@ interface Turn {
  * Follows one filler + reply pair through the AgentSession events.
  *
  * The reply is queued behind the filler and only waits for the caller to be silent before it
- * plays. If the caller talks over the filler, the framework pauses/stops the filler, but the
- * queued reply would start in the first pause of the caller's speech and be cut a moment later
- * when their new turn is committed (an audible fragment of an answer to the old turn). So once
- * the caller has spoken for `minSpeechMs` before the reply started, the reply is interrupted:
- * what they say now gets its own filler and reply.
+ * plays. If the caller says something new before the reply started (over the filler, or in the
+ * gap after it), that reply answers a turn the caller has moved on from: it would start in a
+ * pause of their speech and be cut a moment later when their new turn is committed (an audible
+ * fragment). So the first final transcript after the turn was committed drops the reply; what
+ * they say now gets its own filler and reply. Noise and backchannels produce no transcript (the
+ * STT drops them), so a cough over the filler only pauses it and the reply still plays.
  *
  * Feed it every event in order; it never throws.
  */
@@ -38,7 +37,6 @@ export class FillerTurnGuard {
   /** Replies created since the last commit (preemptive generation may create several). */
   readonly #replies = new Map<string, Speech>();
   #turn: Turn | undefined;
-  #userSpeaking: ReturnType<typeof setTimeout> | undefined;
 
   constructor(opts: FillerTurnGuardOptions) {
     this.#opts = opts;
@@ -74,24 +72,16 @@ export class FillerTurnGuard {
     return false;
   }
 
-  /** `user_state_changed`. */
-  userState(state: string): void {
-    clearTimeout(this.#userSpeaking);
-    this.#userSpeaking = undefined;
-    if (state !== 'speaking') return;
+  /** A non-empty final user transcript (`user_input_transcribed`, `isFinal`). */
+  userTranscript(): void {
     const turn = this.#turn;
-    if (!turn || turn.replyStarted) return;
-    this.#userSpeaking = setTimeout(() => {
-      this.#userSpeaking = undefined;
-      const reply = turn.reply;
-      if (this.#turn !== turn || turn.replyStarted || !reply || reply.done()) return;
-      reply.interrupt();
-      this.#opts.onReplyDropped?.(reply.id);
-    }, this.#opts.minSpeechMs);
+    const reply = turn?.reply;
+    if (!turn || turn.replyStarted || !reply || reply.done()) return;
+    reply.interrupt();
+    this.#opts.onReplyDropped?.(reply.id);
   }
 
   close(): void {
-    clearTimeout(this.#userSpeaking);
     this.#turn = undefined;
     this.#replies.clear();
   }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FillerTurnGuard, type Speech } from './turn.js';
 
 function speech(id: string) {
@@ -18,7 +18,6 @@ function setup() {
   const fillerStarts: number[] = [];
   const dropped: string[] = [];
   const guard = new FillerTurnGuard({
-    minSpeechMs: 500,
     onFillerStart: (at) => fillerStarts.push(at),
     onReplyDropped: (id) => dropped.push(id),
   });
@@ -31,8 +30,6 @@ function setup() {
   return { guard, reply, filler, fillerStarts, dropped };
 }
 
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
 
 describe('FillerTurnGuard', () => {
   it('reports the filler start, then lets the reply play', () => {
@@ -41,32 +38,27 @@ describe('FillerTurnGuard', () => {
     filler.finished = true;
     guard.agentState('listening', 600);
     expect(guard.agentState('speaking', 620)).toBe(false);
-    guard.userState('speaking');
-    vi.advanceTimersByTime(1000);
+    guard.userTranscript();
     expect(fillerStarts).toEqual([100]);
     expect(reply.interrupted).toBe(false);
     expect(dropped).toEqual([]);
   });
 
-  it('drops the queued reply once the caller has talked over the filler for minSpeechMs', () => {
+  it('drops the queued reply when the caller says something new over the filler', () => {
     const { guard, reply, dropped } = setup();
     guard.agentState('speaking', 100);
-    guard.userState('speaking');
-    vi.advanceTimersByTime(499);
-    expect(reply.interrupted).toBe(false);
-    vi.advanceTimersByTime(1);
+    guard.userTranscript();
     expect(reply.interrupted).toBe(true);
     expect(dropped).toEqual(['reply']);
   });
 
-  it('keeps the reply when the caller only made a short sound', () => {
-    const { guard, reply } = setup();
+  it('drops the reply still pending after the filler ended', () => {
+    const { guard, filler, reply } = setup();
     guard.agentState('speaking', 100);
-    guard.userState('speaking');
-    vi.advanceTimersByTime(300);
-    guard.userState('listening');
-    vi.advanceTimersByTime(1000);
-    expect(reply.interrupted).toBe(false);
+    filler.finished = true;
+    guard.agentState('thinking', 600);
+    guard.userTranscript();
+    expect(reply.interrupted).toBe(true);
   });
 
   it('leaves a reply that already started to the normal interruption handling', () => {
@@ -74,21 +66,19 @@ describe('FillerTurnGuard', () => {
     guard.agentState('speaking', 100);
     filler.finished = true;
     guard.agentState('speaking', 700);
-    guard.userState('speaking');
-    vi.advanceTimersByTime(1000);
+    guard.userTranscript();
     expect(reply.interrupted).toBe(false);
   });
 
   it('a new turn replaces the old one', () => {
     const { guard, reply } = setup();
     guard.agentState('speaking', 100);
-    guard.userState('speaking');
     const next = speech('reply2');
     guard.replyCreated(next);
     guard.fillerQueued(speech('filler2'));
     guard.turnCommitted('reply2');
-    vi.advanceTimersByTime(1000);
+    guard.userTranscript();
     expect(reply.interrupted).toBe(false);
-    expect(next.interrupted).toBe(false);
+    expect(next.interrupted).toBe(true);
   });
 });

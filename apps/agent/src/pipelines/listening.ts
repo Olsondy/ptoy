@@ -2,15 +2,13 @@ import { inference, voice } from '@livekit/agents';
 import type { JobContext } from '@livekit/agents';
 import type { CallConfig } from '../config.js';
 import { AsrError, type AsrTranscript, SenseVoiceSTT } from '../stt/sensevoice.js';
+import { TranscriptTurnDetector } from './endpointing.js';
 
 /**
  * Agent participant attribute carrying a user-facing STT failure message ('' = no error).
  * The web subtitle shows it in place of the user's transcript.
  */
 export const ATTRIBUTE_STT_ERROR = 'ptoy.stt_error';
-
-/** Caller speech this long interrupts the agent (the framework default, pinned so fillers can share it). */
-export const INTERRUPTION_MIN_SPEECH_MS = 500;
 
 /**
  * Silero VAD and the `v1-mini` end-of-turn model both run in-process via `@livekit/local-inference`
@@ -19,22 +17,36 @@ export const INTERRUPTION_MIN_SPEECH_MS = 500;
  */
 export function createTurnTaking(config: CallConfig) {
   const vad = new inference.VAD({ minSilenceDuration: config.vadMinSilenceMs });
-  const turnDetection = config.turnDetector === 'eot' ? new inference.TurnDetector({ version: 'v1-mini' }) : 'vad';
+  const turnDetection =
+    config.turnDetector === 'eot'
+      ? new inference.TurnDetector({ version: 'v1-mini' })
+      : config.turnDetector === 'transcript'
+        ? new TranscriptTurnDetector()
+        : 'vad';
   const turnHandling = {
     turnDetection,
     endpointing: { minDelay: config.endpointingMinDelayMs, maxDelay: config.endpointingMaxDelayMs },
     // Plain VAD interruption: 'adaptive' would call LiveKit Cloud.
-    interruption: { mode: 'vad', minDuration: INTERRUPTION_MIN_SPEECH_MS },
+    interruption: {
+      mode: 'vad',
+      minDuration: config.interruptionMinSpeechMs,
+      falseInterruptionTimeout: config.falseInterruptionTimeoutMs,
+    },
   } as const;
   return { vad, turnHandling } as const;
 }
 
-export function createStt(config: CallConfig, onTranscript: (t: AsrTranscript) => void): SenseVoiceSTT {
+export function createStt(
+  config: CallConfig,
+  onTranscript: (t: AsrTranscript) => void,
+  ignore?: (text: string) => boolean,
+): SenseVoiceSTT {
   return new SenseVoiceSTT({
     baseUrl: config.asrUrl,
     timeoutMs: config.asrTimeoutMs,
     language: config.asrLanguage,
     onTranscript,
+    ignore,
   });
 }
 
