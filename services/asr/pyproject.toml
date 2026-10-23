@@ -1,9 +1,0 @@
-[project]
-name = "ptoy-asr-service"
-version = "0.1.0"
-description = "SenseVoiceSmall ASR HTTP service (CPU) for ptoy"
-requires-python = ">=3.10,<3.13"
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]

@@ -1,7 +1,0 @@
-# Install torch/torchaudio FIRST with the CPU-only index (see README), then:
-#   pip install -r requirements.txt
-funasr>=1.1.6
-modelscope>=1.15
-fastapi>=0.110
-uvicorn>=0.29
-numpy<2
