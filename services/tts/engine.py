@@ -372,7 +372,10 @@ class IndexTtsEngine:
         self.warmup_ms = (time.perf_counter() - started) * 1000
         log.info("warm-up done in %.0f ms (output via %s, %d Hz)", self.warmup_ms, self.output_mode, self.sample_rate)
 
-    def _infer_kwargs(self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, output_path: Optional[str]) -> dict[str, Any]:
+    def _infer_kwargs(
+        self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, output_path: Optional[str],
+        generation: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         vec = None
         if emo_vector is not None:
             normalize = getattr(self.tts, "normalize_emo_vec", None)
@@ -389,7 +392,7 @@ class IndexTtsEngine:
             use_random=False,
             verbose=False,
             max_text_tokens_per_segment=self.cfg.max_text_tokens_per_segment,
-            **self.cfg.generation,
+            **{**self.cfg.generation, **(generation or {})},
             **self._infer_extra,
         )
         if self.cfg.version == "2.5":
@@ -404,11 +407,14 @@ class IndexTtsEngine:
             self._warned_dropped = True
         return accepted
 
-    def synthesize(self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, should_abort: Callable[[], bool]) -> np.ndarray:
+    def synthesize(
+        self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, should_abort: Callable[[], bool],
+        generation: Optional[dict[str, Any]] = None,
+    ) -> np.ndarray:
         self._progress.should_abort = should_abort if self.cfg.abort_running else (lambda: False)
         try:
             if self.output_mode == "memory":
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None, generation))
                 parsed = pcm_from_output(output)
                 if parsed is None:
                     raise _NotInMemory(type(output).__name__)
@@ -416,7 +422,7 @@ class IndexTtsEngine:
                 return pcm
             path = os.path.join(self._tmpdir, f"{uuid.uuid4().hex}.wav")
             try:
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path, generation))
                 if not os.path.isfile(path) and isinstance(output, str) and os.path.isfile(output):
                     path = output
                 self.sample_rate, pcm = read_wav(path)

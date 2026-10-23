@@ -1,32 +1,45 @@
-"""参考音频 A/B 试听：用同一组小悠的典型回复，分别配几段候选参考音频合成，生成对比试听页。
+"""参考音频 / 采样参数 A/B 试听：用同一组小悠的典型回复，分别配几段候选参考音频、几组采样参数合成，生成对比试听页。
 
 每条回复合成两种版本：
   - whole：整段一次合成（语调连贯，代表 IndexTTS2 的上限）
   - segmented：按 Agent 的分段方式切开逐段合成再拼接（首段切在第一个逗号，之后按句切；
     段间不加静音），代表通话里实际听到的样子
 两者对比能听出分段对自然度的影响；不同参考音频之间对比能听出参考音频的影响。
+分段版每段是独立采样，段与段之间的音色、语调起伏就是通话里“跳”的来源，调采样参数主要听它。
+
+后端：
+  - gradio（默认）：IndexTTS WebUI，参考音频由 --refs 上传
+  - fastapi：services/tts 服务，参考音频固定为服务端的 TTS_REF_AUDIO（--refs 不用填），
+    采样参数按请求覆盖（`generation` 字段），不用重启服务
 
 用法（标准库即可，Mac 经局域网或 Windows 本机都能跑）：
   python bench/compare_ref_audio.py --tts-url http://127.0.0.1:7860 --refs D:\\voice\\a.wav D:\\voice\\b.wav
   python bench/compare_ref_audio.py --tts-url http://192.168.31.82:7860 --refs ~/voices/ --out /tmp/ref-ab
+  python bench/compare_ref_audio.py --backend fastapi --tts-url http://192.168.31.82:8002 \
+      --sweep temperature=0.8,0.6,0.4 --sweep top_p=0.8,0.6
   只要整段版（省一半时间）：加 --no-segmented；自定义台词：--texts lines.txt（一行一条）
+  --sweep 可重复，多个参数取笛卡尔积，每种组合一列；可扫 temperature / top_p / top_k / repetition_penalty
 
 结果写到 --out（默认 bench/out/ref-ab/），用浏览器打开其中的 index.html 试听。
-情感跟随参考音频（与 Agent 默认的 TTS_EMOTION_CONTROL=reference 一致），其余参数用 WebUI 默认值。
+情感跟随参考音频（与 Agent 的 TTS_EMOTION_CONTROL=reference 一致），未扫的参数用后端自己的默认值。
 """
 
 import argparse
 import html
+import itertools
 import json
 import mimetypes
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 import wave
 from pathlib import Path
+
+SWEEPABLE = {"temperature": float, "top_p": float, "top_k": int, "repetition_penalty": float}
 
 API_NAME = "gen_single"
 EMO_SAME_AS_REFERENCE = "与音色参考音频相同"
@@ -105,9 +118,10 @@ class GradioTts:
         with self._open(req) as resp:
             return json.load(resp)[0]
 
-    def synth(self, ref_server_path, text):
-        """返回 wav 字节。"""
+    def synth(self, ref_server_path, text, generation):
+        """返回 (wave params, PCM 帧)。"""
         overrides = {
+            **generation,
             "emo_control_method": EMO_SAME_AS_REFERENCE,
             "prompt": {"path": ref_server_path, "meta": {"_type": "gradio.FileData"}},
             "text": text,
@@ -140,8 +154,33 @@ class GradioTts:
                 file = output if "path" in output else output.get("value")
                 quoted = urllib.parse.quote(file["path"], safe="")
                 with self._open(f"{self.base}/gradio_api/file={quoted}") as audio:
-                    return audio.read()
+                    return read_wav(audio.read())
         raise RuntimeError("Gradio 结果流里没有 complete 事件")
+
+
+class FastApiTts:
+    """services/tts 的 POST /tts：参考音频是服务端固定的，返回裸 s16le PCM。"""
+
+    def __init__(self, url, timeout=120):
+        self.base = url.rstrip("/")
+        self.timeout = timeout
+        with urllib.request.urlopen(f"{self.base}/health", timeout=timeout) as resp:
+            self.health = json.load(resp)
+
+    def synth(self, text, generation):
+        body = {"text": text, "emotion": "平静"}
+        if generation:
+            body["generation"] = generation
+        req = urllib.request.Request(
+            f"{self.base}/tts", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                rate = int(resp.headers["X-Sample-Rate"])
+                frames = resp.read()
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"TTS 服务返回 {e.code}：{e.read().decode(errors='replace')}") from None
+        return wave._wave_params(1, 2, rate, len(frames) // 2, "NONE", "not compressed"), frames
 
 
 def read_wav(data):
@@ -172,13 +211,30 @@ def collect_refs(items):
     return refs
 
 
-def write_index(out, refs, texts, with_segmented):
+def parse_sweeps(items):
+    """["temperature=0.8,0.6", "top_p=0.8"] → [{"temperature": 0.8, "top_p": 0.8}, ...]（笛卡尔积）；不扫 → [{}]。"""
+    axes = []
+    for item in items or []:
+        name, _, values = item.partition("=")
+        name = name.strip()
+        if name not in SWEEPABLE or not values:
+            sys.exit(f"--sweep 格式是 参数=值1,值2，参数可选 {', '.join(SWEEPABLE)}：{item}")
+        axes.append([(name, SWEEPABLE[name](v)) for v in values.split(",") if v.strip()])
+    return [dict(combo) for combo in itertools.product(*axes)]
+
+
+def variant_name(generation):
+    return " ".join(f"{k}={v}" for k, v in generation.items()) or "默认参数"
+
+
+def write_index(out, columns, texts, with_segmented):
+    """columns: [{"dir", "title", "ref"(参考音频原声文件，可无)}]。"""
     rel = lambda p: html.escape(p.relative_to(out).as_posix())
     rows = []
     for i, text in enumerate(texts):
         cells = []
-        for ref in refs:
-            d = out / ref.stem
+        for col in columns:
+            d = col["dir"]
             players = [f'<div>整段</div><audio controls preload="none" src="{rel(d / f"{i + 1:02d}_whole.wav")}"></audio>']
             if with_segmented:
                 players.append(
@@ -187,26 +243,49 @@ def write_index(out, refs, texts, with_segmented):
             cells.append(f"<td>{''.join(players)}</td>")
         rows.append(f"<tr><th>{html.escape(text)}</th>{''.join(cells)}</tr>")
     refs_row = "".join(
-        f'<td><b>{html.escape(r.name)}</b><br><audio controls preload="none" src="{rel(out / r.stem / ("ref" + r.suffix.lower()))}"></audio></td>'
-        for r in refs
+        f'<td><audio controls preload="none" src="{rel(col["ref"])}"></audio></td>' if col.get("ref") else "<td>（服务端）</td>"
+        for col in columns
     )
-    header = "".join(f"<th>{html.escape(r.stem)}</th>" for r in refs)
+    header = "".join(f"<th><b>{html.escape(col['title'])}</b></th>" for col in columns)
     (out / "index.html").write_text(
         f"""<!doctype html><meta charset="utf-8"><title>参考音频 A/B</title>
 <style>body{{font-family:system-ui,sans-serif;margin:24px}}table{{border-collapse:collapse}}
 td,th{{border:1px solid #ccc;padding:8px;vertical-align:top;text-align:left}}th{{max-width:220px;font-weight:normal}}
 audio{{width:240px;height:32px}}div{{font-size:12px;color:#666}}</style>
 <h2>参考音频 A/B</h2>
-<table><tr><th>参考音频原声</th>{refs_row}</tr><tr><th>台词</th>{header}</tr>{''.join(rows)}</table>
+<table><tr><th>台词</th>{header}</tr><tr><th>参考音频原声</th>{refs_row}</tr>{''.join(rows)}</table>
 """,
         encoding="utf-8",
     )
 
 
+def synth_line(synth, text, with_segmented):
+    """synth(text) → (params, frames)。返回 [(文件后缀, params, frames)] 和日志。"""
+    started = time.perf_counter()
+    params, frames = synth(text)
+    results = [("whole", params, frames)]
+    line = f"整段 {(time.perf_counter() - started):.1f}s"
+    if with_segmented:
+        started = time.perf_counter()
+        segments = split_like_agent(text)
+        joined, first = b"", None
+        for seg in segments:
+            p, f = synth(seg)
+            if first and (p.framerate, p.nchannels, p.sampwidth) != (first.framerate, first.nchannels, first.sampwidth):
+                raise RuntimeError(f"分段音频格式不一致：{p} vs {first}")
+            first = first or p
+            joined += f
+        results.append(("segmented", first, joined))
+        line += f" | 分段 {(time.perf_counter() - started):.1f}s {' / '.join(segments)}"
+    return results, line
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--tts-url", required=True, help="IndexTTS WebUI 地址，如 http://127.0.0.1:7860")
-    parser.add_argument("--refs", nargs="+", required=True, help="候选参考音频文件或目录（可混用）")
+    parser.add_argument("--backend", choices=("gradio", "fastapi"), default="gradio")
+    parser.add_argument("--tts-url", required=True, help="WebUI 如 http://127.0.0.1:7860；FastAPI 服务如 http://127.0.0.1:8002")
+    parser.add_argument("--refs", nargs="+", help="候选参考音频文件或目录（可混用）；gradio 必填，fastapi 不用")
+    parser.add_argument("--sweep", action="append", help="采样参数，如 temperature=0.8,0.6；可重复，取笛卡尔积")
     parser.add_argument("--texts", help="台词文件，一行一条；默认用内置的 5 条")
     parser.add_argument("--out", default=str(Path(__file__).parent / "out" / "ref-ab"), help="输出目录")
     parser.add_argument("--no-segmented", action="store_true", help="只合成整段版")
@@ -215,39 +294,55 @@ def main():
     texts = DEFAULT_TEXTS
     if args.texts:
         texts = [t.strip() for t in Path(args.texts).read_text(encoding="utf-8").splitlines() if t.strip()]
-    refs = collect_refs(args.refs)
+    variants = parse_sweeps(args.sweep)
     out = Path(args.out).expanduser().resolve()
     with_segmented = not args.no_segmented
 
-    tts = GradioTts(args.tts_url)
-    for ref in refs:
-        d = out / ref.stem
-        d.mkdir(parents=True, exist_ok=True)
-        (d / ("ref" + ref.suffix.lower())).write_bytes(ref.read_bytes())
-        server_path = tts.upload(ref)
-        print(f"== {ref.name}")
-        for i, text in enumerate(texts):
-            start = time.perf_counter()
-            params, frames = read_wav(tts.synth(server_path, text))
-            write_wav(d / f"{i + 1:02d}_whole.wav", params, frames)
-            line = f"  {i + 1:02d} 整段 {(time.perf_counter() - start):.1f}s"
-            if with_segmented:
-                start = time.perf_counter()
-                segments = split_like_agent(text)
-                joined, first_params = b"", None
-                for seg in segments:
-                    p, f = read_wav(tts.synth(server_path, seg))
-                    if first_params and (p.framerate, p.nchannels, p.sampwidth) != (
-                        first_params.framerate, first_params.nchannels, first_params.sampwidth,
-                    ):
-                        raise RuntimeError(f"分段音频格式不一致：{p} vs {first_params}")
-                    first_params = first_params or p
-                    joined += f
-                write_wav(d / f"{i + 1:02d}_segmented.wav", first_params, joined)
-                line += f" | 分段 {(time.perf_counter() - start):.1f}s {' / '.join(segments)}"
-            print(line)
+    # 每列：(目录, 标题, 参考音频原声, synth(text))
+    columns = []
+    if args.backend == "fastapi":
+        if args.refs:
+            sys.exit("fastapi 后端的参考音频是服务端的 TTS_REF_AUDIO，不接受 --refs")
+        tts = FastApiTts(args.tts_url)
+        supported = set(tts.health.get("generation_overrides", []))
+        unsupported = {k for g in variants for k in g} - supported
+        if unsupported:
+            sys.exit(f"服务不支持按请求覆盖 {sorted(unsupported)}（/health 的 generation_overrides），先更新并重启 services/tts")
+        ref_name = tts.health.get("ref_audio", "server")
+        print(f"服务端参考音频 {ref_name}，默认采样 {tts.health.get('generation')}")
+        for g in variants:
+            slug = "_".join(f"{k}{v}" for k, v in g.items()) or "default"
+            columns.append((out / f"{Path(ref_name).stem}_{slug}", f"{ref_name}｜{variant_name(g)}", None,
+                            lambda text, g=g: tts.synth(text, g)))
+    else:
+        if not args.refs:
+            sys.exit("gradio 后端需要 --refs")
+        tts = GradioTts(args.tts_url)
+        names = {p.get("parameter_name") for p in tts.params}
+        unsupported = {k for g in variants for k in g} - names
+        if unsupported:
+            sys.exit(f"WebUI 的 /{API_NAME} 没有这些参数：{sorted(unsupported)}（有 {sorted(n for n in names if n)}）")
+        for ref in collect_refs(args.refs):
+            server_path = tts.upload(ref)
+            for g in variants:
+                slug = "_".join(f"{k}{v}" for k, v in g.items())
+                d = out / (f"{ref.stem}_{slug}" if slug else ref.stem)
+                d.mkdir(parents=True, exist_ok=True)
+                (d / ("ref" + ref.suffix.lower())).write_bytes(ref.read_bytes())
+                title = ref.name if not g else f"{ref.name}｜{variant_name(g)}"
+                columns.append((d, title, d / ("ref" + ref.suffix.lower()),
+                                lambda text, p=server_path, g=g: tts.synth(p, text, g)))
 
-    write_index(out, refs, texts, with_segmented)
+    for d, title, _, synth in columns:
+        d.mkdir(parents=True, exist_ok=True)
+        print(f"== {title}")
+        for i, text in enumerate(texts):
+            results, line = synth_line(synth, text, with_segmented)
+            for kind, params, frames in results:
+                write_wav(d / f"{i + 1:02d}_{kind}.wav", params, frames)
+            print(f"  {i + 1:02d} {line}")
+
+    write_index(out, [{"dir": d, "title": t, "ref": r} for d, t, r, _ in columns], texts, with_segmented)
     print(f"\n试听：{out / 'index.html'}")
 
 

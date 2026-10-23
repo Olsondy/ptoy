@@ -29,12 +29,15 @@ class FakeEngine:
         self.active = 0
         self.max_active = 0
 
-    def synthesize(self, text, emo_vector, emo_alpha, should_abort):
+    def synthesize(self, text, emo_vector, emo_alpha, should_abort, generation=None):
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
         try:
-            self.calls.append({"text": text, "emo_vector": emo_vector, "emo_alpha": emo_alpha})
+            call = {"text": text, "emo_vector": emo_vector, "emo_alpha": emo_alpha}
+            if generation is not None:
+                call["generation"] = generation
+            self.calls.append(call)
             self.started.set()
             if self.gated:
                 while not self.release.wait(0.01):
@@ -111,6 +114,14 @@ class HttpTest(unittest.TestCase):
             [([1, 0, 0, 0, 0, 0, 0, 0], 0.5), (None, 0.5), ([0, 0, 0.8, 0, 0, 0, 0, 0], 1.0)],
         )
 
+    def test_generation_overrides_reach_the_engine(self):
+        engine = FakeEngine()
+        c = self.client(engine)
+        c.post("/tts", json={"text": "嗯。", "generation": {"temperature": 0.5, "top_k": 10}})
+        c.post("/tts", json={"text": "嗯。", "generation": {}})
+        self.assertEqual(engine.calls[0]["generation"], {"temperature": 0.5, "top_k": 10})
+        self.assertNotIn("generation", engine.calls[1])
+
     def test_validation(self):
         c = self.client(FakeEngine(), max_text_chars=5)
         bad = [
@@ -121,6 +132,8 @@ class HttpTest(unittest.TestCase):
             {"text": "你好", "emotion_vector": [2, 0, 0, 0, 0, 0, 0, 0]},
             {"text": "你好", "emotion": "喜", "emotion_vector": [1, 0, 0, 0, 0, 0, 0, 0]},
             {"text": "你好", "emo_alpha": 1.5},
+            {"text": "你好", "generation": {"temperature": 0}},
+            {"text": "你好", "generation": {"seed": 1}},
             {"text": "这句话太长了"},
         ]
         for body in bad:
@@ -139,7 +152,10 @@ class HttpTest(unittest.TestCase):
 
     def test_health(self):
         res = self.client(FakeEngine()).get("/health")
-        self.assertEqual(res.json(), {"status": "ok", "queued": 0, "running": None, "model": "fake", "sample_rate": RATE})
+        self.assertEqual(res.json(), {
+            "status": "ok", "queued": 0, "running": None, "model": "fake", "sample_rate": RATE,
+            "generation_overrides": ["temperature", "top_p", "top_k", "repetition_penalty"],
+        })
 
     def test_cancel_running_request_over_http(self):
         engine = FakeEngine(gated=True)
