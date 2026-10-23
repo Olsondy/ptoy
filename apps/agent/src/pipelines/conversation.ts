@@ -4,13 +4,16 @@ import {
   type ChatMessage,
   type ModelSettings,
   type TimedString,
+  type llm,
   createTimedString,
   isTimedString,
   log,
   voice,
 } from '@livekit/agents';
+import type { Emotion } from '@ptoy/segmenter';
 import { readFileSync } from 'node:fs';
 import { type ConversationConfig, loadConversationConfig } from '../config.js';
+import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
 import { createLlm } from '../llm/index.js';
 import { type Filler, type FillerBank, fillerAudio, loadFillerBank } from '../fillers/bank.js';
 import { FillerTurnGuard } from '../fillers/turn.js';
@@ -84,10 +87,21 @@ interface FillerHooks {
  */
 class CharacterAgent extends voice.Agent {
   readonly #fillers: FillerHooks | undefined;
+  readonly #toneOf: (userText: string) => Emotion;
 
-  constructor(options: voice.AgentOptions<unknown>, fillers?: FillerHooks) {
+  constructor(options: voice.AgentOptions<unknown>, toneOf: (userText: string) => Emotion, fillers?: FillerHooks) {
     super(options);
+    this.#toneOf = toneOf;
     this.#fillers = fillers;
+  }
+
+  /**
+   * The LLM sees the user message being answered with the caller's tone, e.g. `[用户语气:怒] …`
+   * (#13). Only this request's copy is changed: history and subtitles keep the raw transcript.
+   */
+  override async llmNode(chatCtx: ChatContext, toolCtx: llm.ToolContext, modelSettings: ModelSettings) {
+    const ctx = withUserTone(chatCtx, this.#toneOf);
+    return voice.Agent.default.llmNode(this, ctx, toolCtx, modelSettings);
   }
 
   /**
@@ -135,11 +149,18 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   const timing = new TurnTimingTracker((turn) => logger.info({ turn }, 'turn timing'));
   let asrEmotion: string | undefined;
+  const tones = new UserToneTracker();
   const stt = createStt(config, (t) => {
     asrEmotion = t.emotion;
+    tones.utterance(t.text, t.emotion);
     timing.onAsrResult(t.inferenceMs);
     logger.debug({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
   });
+  const toneOf = (userText: string) => {
+    const tone = tones.toneOf(userText);
+    logger.debug({ tone }, 'user tone for the llm');
+    return tone;
+  };
   const tts = new IndexTTS({ backend: createTtsBackend(config.tts), sampleRate: config.audioSampleRate });
   const fillerBank = config.fillers ? await loadFillerBank(config.fillers.manifestPath, config.audioSampleRate) : undefined;
   const fillerGuard = new FillerTurnGuard({
@@ -217,7 +238,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   });
 
   await session.start({
-    agent: new CharacterAgent({ instructions: loadCharacterPrompt(config) }, fillerHooks),
+    agent: new CharacterAgent({ instructions: loadCharacterPrompt(config) }, toneOf, fillerHooks),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
     outputOptions: { audioSampleRate: config.audioSampleRate },
