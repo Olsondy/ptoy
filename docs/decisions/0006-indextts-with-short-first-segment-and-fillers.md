@@ -10,6 +10,6 @@
 
 ## Consequences
 
-阶段 1 直接调用 Gradio WebUI 的 `/gen_single`；阶段 2 把 IndexTTS 封装成 FastAPI 服务替代 WebUI（两者不能同时运行），省掉 Gradio 的固定开销，并支持返回 PCM 和取消合成。
+阶段 1 直接调用 Gradio WebUI 的 `/gen_single`；阶段 2 把 IndexTTS 封装成 FastAPI 服务替代 WebUI（两者不能同时运行），支持返回 PCM 和取消合成。实测固定开销主要在模型本身，不在 Gradio，换 FastAPI 不降延迟（见 server.md §6）。
 
 阶段 2 已实现（#14）：`services/tts` 常驻加载模型、预热并缓存音色，直接返回 PCM，按请求 ID 取消（排队的移除，进行中的在下一个阶段边界中止）；Agent 用 `TTS_BACKEND=fastapi` 切换，插件接口不变。决策本身不变：仍是整句合成，首句延迟仍靠短首段和语气词掩盖。固定开销实际降了多少、扩散步数降到多少可接受，以 Windows 本机实测为准（`docs/architecture/server.md` §6）；如果降完之后首段仍明显慢于语气词，再考虑上面的流式备选。

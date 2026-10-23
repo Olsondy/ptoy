@@ -26,7 +26,7 @@
 
 Hugging Face 提供的是模型文件，不包含这台机器的 HTTP 服务和启动脚本。ptoy 通过 HTTP 使用它们，也不会通过 `pnpm install` 自动安装它们。迁移前保存：
 
-- 三个模型目录的 `Start-*.ps1`。
+- 三个模型目录的 `Start-*.ps1`，包括 IndexTTS 的 `Start-IndexTTS-API.ps1`（内容见 [IndexTTS 2.5](IndexTTS-2.5.md#ptoy-使用的-api-服务)）。
 - llama.cpp 的 `llama-8b.ps1` 和 `templates/huihui-qwen3-8b-v2.jinja`。
 - IndexTTS 的本地 `webui.py` 修改、`start-local.ps1`、`download-aux-local.py` 和参考音频；辅助模型也要保留。
 - SenseVoice 的 `server.py`、`start-local.ps1` 和 `requirements-lock.txt`。

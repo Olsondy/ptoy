@@ -91,7 +91,7 @@ llama-server -m "D:\Resources\MyWorkspace\ai\models\Huihui-Qwen3-8B-abliterated-
 | 服务 | 程序目录 | 模型目录（相对于 `D:\Resources\MyWorkspace\ai\models`） | 运行方式 |
 |---|---|---|---|
 | Qwen3 8B | `D:\Development\llama.cpp` | `Huihui-Qwen3-8B-abliterated-v2.Q5_K_M` | 原生 CUDA llama-server，无 Conda |
-| IndexTTS 2.5 | `D:\Development\IndexTTS` | `IndexTTS-2.5` | `D:\Resources\MyWorkspace\ai\conda\envs\indextts`，Python 3.11 |
+| IndexTTS 2.5 | `D:\Development\IndexTTS`（模型代码）+ ptoy `services\tts`（API 服务 :8002） | `IndexTTS-2.5` | `D:\Resources\MyWorkspace\ai\conda\envs\indextts`，Python 3.11；入口 `Start-IndexTTS-API.ps1`，WebUI 入口 `Start-IndexTTS.ps1` 仅用于试听调参，二者不同时运行 |
 | SenseVoiceSmall | `D:\Development\SenseVoice` | `SenseVoiceSmall` | `D:\Resources\MyWorkspace\ai\conda\envs\sensevoice`，Python 3.11 |
 
 每个模型目录只有一个 `Start-*.ps1` 入口，转调程序目录的实际启动脚本；Python 服务脚本直接调用专用环境的 `python.exe` 并设置 PATH，无需手动 `conda activate`。
@@ -115,17 +115,28 @@ SenseVoice 的本地 `server.py` 基于 FunASR 1.4.14 和 PyTorch 2.8.0+cu128，
 - 唯一的瓶颈是第一句的延迟，它取决于第一句的长度
 - 从 Mac 经 Wi-Fi 调用时，每次都要上传 1.9MB 参考音频，固定开销膨胀到约 4s。所以压测要以 Windows 本机的数据为准
 
-### TTS FastAPI 服务实测（#14，待 Windows 本机复测）
+### TTS FastAPI 服务实测（#14）
 
-`services/tts/bench.py`（合成耗时 vs 字数、取消、显存）和 `bench/bench_gpu.py --tts-fastapi-url`（与 LLM 并发）。数据回填前，延迟预算仍按 Gradio 模型计算。
+`services/tts/bench.py`（合成耗时 vs 字数、取消、显存）和 `bench/bench_gpu.py --tts-fastapi-url`（与 LLM 并发）。
+
+2026-10-23 首测：服务端 `X-Synth-Ms`（不含网络），v2.5 BF16、不加载 QwenEmotion、25 步扩散，llama-server 同时加载。单次请求、未跑 `bench.py`，作初步参考。
+
+| 文本 | 参考音频情绪 | 情绪「喜」 | 音频时长 |
+|---|---|---|---|
+| 3 字 | 1407ms | 1079ms | ~0.9s |
+| 10 字 | 1786ms | 1903ms | ~2.4s |
+| 25 字 | 2857ms | 3037ms | ~5.0s |
+
+- 拟合约 **1.1s 固定开销 + 73ms/字**，与 Gradio 的 770ms + 89ms/字 相当。**Gradio 的固定开销主要来自模型本身**（自回归语义 token + 25 步扩散 + 声码器），不是 Gradio 的排队和文件读写；换 FastAPI 本身不降延迟
+- FastAPI 的实际收益：打断时取消合成、免上传参考音频、内存返回 PCM；显存整卡 13.6 / 16GB（服务约 5.5GB，含 llama-server）
+- `/health` 显示该版本 `infer` 支持内存返回（`output_mode: memory`）和 `stream_return`，没有 `diffusion_steps` 参数
+- 下一步降延迟的手段：`TTS_ACCEL=1`（GPT 加速，需 accel 可选依赖）、`TTS_DIFFUSION_STEPS`（替换 `s2mel` 的步数，待验证是否生效及音质）、`stream_return`（只对多段长句有效）
 
 | 指标 | Gradio（上表） | FastAPI 默认（25 步） | FastAPI 降步数（`TTS_DIFFUSION_STEPS=?`） |
 |---|---|---|---|
-| 耗时拟合：固定开销 + 每字 | 770ms + 89ms/字 | 待测 | 待测 |
-| 短句（13 字）合成 / RTF | 1929ms / 0.66 | 待测 | 待测 |
-| LLM 并发时短句合成 | 2253ms | 待测 | — |
+| 耗时拟合：固定开销 + 每字 | 770ms + 89ms/字 | ~1.1s + 73ms/字（初测） | 待测 |
 | 取消 → GPU 空闲 | 不能取消，跑完为止 | 待测 | — |
-| 显存峰值（整卡，含 LLM） | 13.8 / 16GB | 待测（不加载 QwenEmotion，预计更低） | — |
+| 显存（整卡，含 LLM） | 13.8 / 16GB | 13.6 / 16GB | — |
 | 音质（试听 `--save-wavs`） | 基准 | 基准 | 待评 |
 
 ## 7. 延迟预算
@@ -143,7 +154,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 ## 8. 分阶段计划
 
 - **阶段 1**：TTS 直接调用 Gradio `/gen_single`，先跑通整条链路和整体体验
-- **阶段 2**：IndexTTS 封装成 FastAPI 服务，**替代** WebUI（两者不能同时运行，否则会加载两份模型）。启动时缓存音色特征、开 FP16、降低扩散步数、直接返回 PCM、支持取消。预计节省约 0.5s
+- **阶段 2**：IndexTTS 封装成 FastAPI 服务，**替代** WebUI（两者不能同时运行，否则会加载两份模型）。启动时缓存音色特征、开半精度、直接返回 PCM、支持取消。原先预计能省掉约 0.5s 的 Gradio 开销，实测固定开销主要在模型本身（§6），延迟要靠加速选项和降扩散步数
   - 实现：`services/tts`（用法、环境变量、API 见其 README），Agent 侧 `TTS_BACKEND=fastapi` + `TTS_FASTAPI_URL`（`apps/agent/src/tts/fastapi.ts`），插件和 Agent 其余部分不变
   - 模型：进程启动时按 WebUI `build_tts()` 的方式加载一次 IndexTTS2（默认 v2.5、半精度：v2.5 为 BF16，v2 为 FP16；不加载 QwenEmotion，我们只用情感向量），再用固定的参考音频路径预热一次。之后每个请求都传同一个路径，命中 IndexTTS2 按路径缓存的音色条件（spk_cond / s2mel style / prompt）
   - 调用：`tts.infer(...)` 的参数按 `inspect.signature` 过滤（这个非官方版本不接受的参数告警后丢弃）；预热时试 `output_path=None`，能拿到 `(采样率, 数组)` 就内存返回，否则写临时 wav 再读。采样参数默认同 WebUI，可用环境变量改
@@ -181,7 +192,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 10. 待定事项
 
-- IndexTTS 当前为官方源码加本地 `webui.py` 调整；仓库已实现阶段 2 FastAPI 服务，本机仍使用上述 WebUI 部署基线。切换前需验证当前 2.5 推理接口兼容性；`infer` 是否支持 `output_path=None`、是否有扩散步数参数、`gr_progress` 回调位置，以服务启动日志打印的签名为准（#14）。
+- IndexTTS 当前为官方源码加本地 `webui.py` 调整；本机已切换到阶段 2 API 服务（:8002），`infer` 支持内存返回和 `stream_return`、没有扩散步数参数（#14）。取消生效时间待 `bench.py` 实测。
 - 扩散步数降低后音质和速度的取舍，需要实测（§6「TTS FastAPI 服务实测」）
 - 轮次检测模型对中文的效果，需要实测
 

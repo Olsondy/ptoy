@@ -103,14 +103,47 @@ D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5\Start-IndexTTS.ps1
 D:\Development\IndexTTS\prompts\vo-10s.wav
 ```
 
-保持音频文件可读。ptoy Agent 也要在 `.env` 设置自己的 `TTS_REF_AUDIO`；模型网页的默认参考音频不会自动成为应用的配置。
+保持音频文件可读。用 WebUI 时，ptoy Agent 还要在 `.env` 设置自己的 `TTS_REF_AUDIO`；用下面的 API 服务时由服务端读取，Agent 不需要。
+
+## ptoy 使用的 API 服务
+
+ptoy 默认用仓库里的 `services/tts/server.py`（:8002）代替 WebUI：同一套模型和参考音频，常驻加载，直接返回 PCM，打断时能取消合成。它和 WebUI 不能同时运行。服务的环境变量见 [services/tts/README.md](../../services/tts/README.md)。
+
+在模型目录新建入口 `D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5\Start-IndexTTS-API.ps1`（与 `Start-IndexTTS.ps1` 并列，不入库）：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$envRoot = 'D:\Resources\MyWorkspace\ai\conda\envs\indextts'
+$env:PATH = "$envRoot;$envRoot\Library\bin;$envRoot\Scripts;D:\Development\ffmpeg-7.1.1-full_build\bin;$env:PATH"
+$env:NLTK_DATA = 'D:\Resources\MyWorkspace\ai\cache\nltk_data'
+$env:NO_PROXY = 'localhost,127.0.0.1'
+
+$env:INDEXTTS_DIR  = 'D:\Development\IndexTTS'
+$env:TTS_MODEL_DIR = 'D:\Resources\MyWorkspace\ai\models\IndexTTS-2.5'
+$env:TTS_REF_AUDIO = 'D:\Development\IndexTTS\prompts\vo-10s.wav'
+
+& "$envRoot\python.exe" 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\server.py'
+```
+
+服务默认与当前 WebUI 配置一致：v2.5、半精度（BF16）、不加载 QwenEmotion、`num_beams=1`。`TTS_MODEL_DIR` 必须指向上面的模型目录；不设置时会去 `<INDEXTTS_DIR>\checkpoints` 找 `config.yaml`。
 
 ## 安装后检查
 
-按总览启动后，检查网页与 API：
+API 服务（ptoy 默认）：
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:8002/health' -NoProxy
+python 'D:\Resources\MyWorkspace\ai\ptoy\services\tts\bench.py' --save-wavs bench_out
+```
+
+`health` 应返回 `status: ok`；`bench.py` 输出各长度句子的合成耗时，`--save-wavs` 保存的音频播放确认有声音、音色正确。
+
+WebUI：
 
 ```powershell
 (Invoke-RestMethod 'http://127.0.0.1:7860/gradio_api/info' -NoProxy).named_endpoints.'/gen_single'
 ```
 
-应能看到 `/gen_single` 的参数说明。然后在网页使用参考音频合成一句中文，播放确认有声音、音色正确。当前接口整句生成后返回文件，应用通过分段合成衔接播放；不要把它当作原生流式 TTS。
+应能看到 `/gen_single` 的参数说明，再在网页合成一句中文试听。
+
+两种方式都是整句生成后返回，应用通过分段合成衔接播放；不要把它当作原生流式 TTS。
