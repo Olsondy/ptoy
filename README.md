@@ -59,6 +59,45 @@ git pull
 pnpm install
 ```
 
+## 外网访问（Tailscale）
+
+手机等设备装 Tailscale 后，在外网也像在局域网里一样访问 Windows；`tailscale serve` 提供 HTTPS，浏览器才允许用麦克风。
+
+1. Windows 和手机都安装 [Tailscale](https://tailscale.com/download)，登录同一个账号。
+2. 在 Tailscale 管理后台 → DNS，打开 **MagicDNS** 和 **HTTPS Certificates**。
+3. 在 Windows 上查本机的 Tailscale 地址：
+
+   ```powershell
+   tailscale ip -4          # 100.x.y.z
+   tailscale status         # 第一行是本机名，完整域名形如 <本机名>.<tailnet>.ts.net
+   ```
+
+4. 用 `tailscale serve` 给网页和 LiveKit 加 HTTPS（只需一次，`--bg` 会一直保持）：
+
+   ```powershell
+   tailscale serve --bg --https=443 4173
+   tailscale serve --bg --https=8443 7880
+   tailscale serve status
+   ```
+
+5. 放行 Tailscale 网段的防火墙（管理员 PowerShell，只需一次）：
+
+   ```powershell
+   New-NetFirewallRule -DisplayName ptoy-tailscale-tcp -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4173,7880,7881 -RemoteAddress 100.64.0.0/10
+   New-NetFirewallRule -DisplayName ptoy-tailscale-udp -Direction Inbound -Action Allow -Protocol UDP -LocalPort 7882 -RemoteAddress 100.64.0.0/10
+   ```
+
+6. 在 `apps\agent\.env` 里加两行（换成第 3 步查到的值），然后重启 `pnpm app`：
+
+   ```ini
+   LIVEKIT_PUBLIC_URL=wss://<本机名>.<tailnet>.ts.net:8443
+   LIVEKIT_NODE_IP=100.x.y.z
+   ```
+
+7. 手机打开 Tailscale，再用浏览器访问 `https://<本机名>.<tailnet>.ts.net`。
+
+设了 `LIVEKIT_NODE_IP` 之后，所有访问的设备都要通过 Tailscale 连接；只在本机测试时去掉这两行即可。
+
 ## 文档
 
 - [架构](docs/architecture/server.md) · [情绪链路](docs/architecture/emotion-pipeline.md)
