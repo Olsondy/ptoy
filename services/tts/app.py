@@ -26,6 +26,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from pauses import PauseLimits, tighten
+
 log = logging.getLogger("ptoy.tts")
 
 # IndexTTS2 emotion-vector order (same as packages/segmenter EMOTIONS / WebUI vec1..vec8).
@@ -295,7 +297,11 @@ async def _wait_or_disconnect(request: Request, fut: concurrent.futures.Future, 
             return await waiter
 
 
-def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_chars: int = 300, max_queue: int = 8) -> FastAPI:
+def create_app(
+    engine: Engine, *, default_emo_alpha: float = 0.65, max_text_chars: int = 300, max_queue: int = 8,
+    pauses: Optional[PauseLimits] = None,
+) -> FastAPI:
+    """`pauses`: tighten each response's edge and inner silences (None = return the model output as is)."""
     queue = SynthesisQueue(engine, max_queue=max_queue)
     app = FastAPI(title="ptoy IndexTTS service")
     app.state.queue = queue
@@ -336,6 +342,8 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
         pcm = np.asarray(pcm)
         if pcm.dtype != np.int16:
             return _error(500, "synthesis_failed", f"engine returned {pcm.dtype}, expected int16", headers)
+        if pauses is not None:
+            pcm = tighten(pcm.reshape(-1), engine.sample_rate, pauses)
         data = pcm.reshape(-1).astype("<i2", copy=False).tobytes()
         queue_ms = (job.started_at - job.enqueued_at) * 1000 if job.started_at else 0.0
         synth_ms = (job.finished_at - job.started_at) * 1000 if job.started_at and job.finished_at else 0.0
