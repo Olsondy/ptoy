@@ -216,7 +216,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   const tts = new IndexTTS({
     backend: createTtsBackend(config.tts, character.voice),
     sampleRate: config.audioSampleRate,
-    segmenter: { emotionScope: 'reply' },
+    segmenter: { emotionScope: 'reply', dropLeadingInterjection: true },
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();

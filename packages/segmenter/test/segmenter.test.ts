@@ -113,3 +113,23 @@ describe("length fallback for long unpunctuated text", () => {
     expect(out.slice(1).map((t) => t.length)).toEqual([40, 40, 20]);
   });
 });
+
+describe("dropLeadingInterjection", () => {
+  const opts = { dropLeadingInterjection: true };
+
+  it("drops the interjections a reply opens with, across token boundaries", () => {
+    expect(texts(run(chars("嗯，衬衫啊？最近天气转凉了。"), opts))).toEqual(["衬衫啊？", "最近天气转凉了。"]);
+    expect(texts(run(["[喜]好的", "，", "嗯嗯，我陪你去。"], opts))).toEqual(["我陪你去。"]);
+    expect(texts(run(chars("啊，我也想你了。"), opts))[0]).toBe("我也想你了。");
+  });
+
+  it("keeps them later in the reply, without punctuation, or when they are the whole reply", () => {
+    expect(texts(run(chars("今天好累。嗯，早点睡吧。"), opts))).toEqual(["今天好累。", "嗯，早点睡吧。"]);
+    expect(texts(run(chars("好的电影不多。"), opts))).toEqual(["好的电影不多。"]);
+    expect(texts(run(chars("嗯嗯！"), opts))).toEqual(["嗯嗯！"]);
+  });
+
+  it("is off by default", () => {
+    expect(texts(run(chars("嗯，衬衫啊？")))).toEqual(["嗯，衬衫啊？"]);
+  });
+});
