@@ -1,5 +1,5 @@
-// Starts the app side of ptoy in one terminal: LiveKit server, token server, agent and web.
-// Model services (IndexTTS, llama-server, ASR) are managed separately; this only checks they answer.
+// Starts ptoy in one terminal: LiveKit server, token server, agent and web.
+// Model service addresses come from apps/agent/.env.
 // Usage: pnpm app            (Ctrl+C stops everything it started)
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -48,28 +48,6 @@ function portOpen(port, host = '127.0.0.1') {
   });
 }
 
-async function answers(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    return res.status < 500;
-  } catch {
-    return false;
-  }
-}
-
-async function checkModels() {
-  const llmBase = (env.LLM_BASE_URL || 'http://127.0.0.1:8080/v1').replace(/\/$/, '');
-  const checks = [
-    ['ASR      ', `${(env.ASR_URL || 'http://127.0.0.1:8100').replace(/\/$/, '')}/health`],
-    ['LLM      ', `${llmBase}/models`],
-    ['IndexTTS ', env.TTS_GRADIO_URL || 'http://127.0.0.1:7860'],
-  ];
-  const results = await Promise.all(checks.map(async ([name, url]) => [name, url, await answers(url)]));
-  for (const [name, url, ok] of results) {
-    log(`${ok ? '✓' : '✗'} ${name}${url}${ok ? '' : '  没有响应（对话会报错，先启动它）'}`);
-  }
-}
-
 function start(name, command, args, extraEnv = {}) {
   const child = spawn(command, args, {
     cwd: root,
@@ -111,9 +89,6 @@ function stopAll(exitCode = 0) {
 
 process.on('SIGINT', () => stopAll(0));
 process.on('SIGTERM', () => stopAll(0));
-
-log('检查模型服务…');
-await checkModels();
 
 if (await portOpen(livekitPort, livekitUrl.hostname)) {
   log(`✓ LiveKit  已在 :${livekitPort} 运行，跳过启动`);

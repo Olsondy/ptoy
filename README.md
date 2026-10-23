@@ -10,14 +10,6 @@
 
 ## 启动
 
-前提：模型服务已经自己启动好，`pnpm app` 只会检查它们有没有响应。
-
-| 模型服务 | 默认地址 |
-|---|---|
-| ASR（SenseVoice，`services/asr`） | http://127.0.0.1:8100 |
-| llama-server | http://127.0.0.1:8080 |
-| IndexTTS2 WebUI | http://127.0.0.1:7860 |
-
 ### 第一次
 
 ```powershell
@@ -27,14 +19,15 @@ pnpm install
 Copy-Item apps\agent\.env.example apps\agent\.env
 ```
 
-在 `apps\agent\.env` 里填两项：
+在 `apps\agent\.env` 里配置：
 
 ```ini
 LIVEKIT_SERVER_BIN=C:\livekit\livekit-server.exe   # 从 https://github.com/livekit/livekit/releases 下载
+ASR_URL=http://127.0.0.1:8100                      # 模型服务地址
+LLM_BASE_URL=http://127.0.0.1:8080/v1
+TTS_GRADIO_URL=http://127.0.0.1:7860
 TTS_REF_AUDIO=C:\path\to\ref.wav                   # 角色音色参考音频
 ```
-
-模型服务不在本机时，再改 `ASR_URL`、`LLM_BASE_URL`、`TTS_GRADIO_URL`。
 
 需要从局域网其他设备访问时，用管理员 PowerShell 放行防火墙（只需一次）：
 

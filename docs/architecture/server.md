@@ -134,10 +134,8 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 9. 运维注意
 
-应用侧（LiveKit、token 服务、Agent、网页）用仓库根目录的 `pnpm app` 一条命令启动，见 `README.md`。模型服务（IndexTTS、llama-server、ASR）由用户自行启动和维护，`pnpm app` 启动前只检查它们是否有响应。
+应用（LiveKit、token 服务、Agent、网页）用仓库根目录的 `pnpm app` 一条命令启动，见 `README.md`。模型服务由用户自行维护，应用只通过 `apps/agent/.env` 里配置的地址连接它们。
 
-- 模型服务的启动顺序：先 IndexTTS，再 llama-server（ADR 0005）；llama-server 日志里要有 `offloaded 37/37 layers to GPU`；NVIDIA 控制面板的 CUDA 系统内存回退策略设为“首选无系统内存回退”
-- 开着系统代理（如 Clash）时，给模型服务所在的终端设置 `NO_PROXY=localhost,127.0.0.1,192.168.31.82`，否则 Gradio / Python 对本机的请求可能被代理拦截
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
 - 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860、8080、8100（ASR）
 - 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS（例如反向代理），目前未提供
