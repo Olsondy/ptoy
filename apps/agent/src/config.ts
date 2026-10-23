@@ -142,6 +142,7 @@ const conversationSchema = charactersSchema.extend({
     .enum(['true', 'false', '1', '0'])
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
+  FILLER_DELAY_MS: z.coerce.number().int().nonnegative().default(2000),
 });
 
 export interface LlmConfig {
@@ -199,6 +200,11 @@ export interface ConversationConfig extends CallConfig {
     readonly dir: string;
     /** Every turn gets a filler (no chance-based skipping); `sim:call --barge-in` relies on it. */
     readonly always: boolean;
+    /**
+     * The filler waits this long after the turn ends and is skipped if the reply's first audio is
+     * ready by then: only a slow reply gets one. 0 = play right away.
+     */
+    readonly delayMs: number;
   };
 }
 
@@ -244,6 +250,8 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     tts,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
-    fillers: e.FILLERS_ENABLED ? { dir: e.FILLERS_DIR, always: e.FILLERS_ALWAYS } : undefined,
+    fillers: e.FILLERS_ENABLED
+      ? { dir: e.FILLERS_DIR, always: e.FILLERS_ALWAYS, delayMs: e.FILLER_DELAY_MS }
+      : undefined,
   };
 }

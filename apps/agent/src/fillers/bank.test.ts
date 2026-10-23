@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { loadCharacters } from '../characters.js';
 import { DEFAULT_CHARACTERS_DIR, DEFAULT_FILLERS_DIR } from '../config.js';
-import { type Filler, FillerBank, fillerAudio, fillerManifestPath, loadFillerBank } from './bank.js';
+import { type Filler, FillerBank, fillerAudio, fillerGate, fillerManifestPath, loadFillerBank } from './bank.js';
 
 describe('loadFillerBank', () => {
   it('ships a filler set for every shipped character voice', () => {
@@ -51,5 +51,41 @@ describe('FillerBank.next', () => {
   it('plays every turn with always', () => {
     const bank = new FillerBank(fillers, () => 0.99, true);
     expect([statement, statement, question, question].map((t) => bank.next(t)?.id).every(Boolean)).toBe(true);
+  });
+});
+
+describe('fillerGate', () => {
+  const never = new Promise<void>(() => {});
+
+  it('plays once the delay has passed without reply audio', async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = fillerGate(1500, never);
+      await vi.advanceTimersByTimeAsync(1500);
+      await expect(gate).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips when the reply audio is ready first, and the skipped stream has no frames', async () => {
+    vi.useFakeTimers();
+    try {
+      let ready!: () => void;
+      const gate = fillerGate(1500, new Promise<void>((r) => (ready = r)));
+      await vi.advanceTimersByTimeAsync(800);
+      ready();
+      await expect(gate).resolves.toBe(false);
+      const filler = (await loadFillerBank(fillerManifestPath(DEFAULT_FILLERS_DIR, 'chunqing'), 24000)).fillers[0]!;
+      let frames = 0;
+      for await (const _ of fillerAudio(filler, gate)) frames++;
+      expect(frames).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('plays at once with no delay', async () => {
+    await expect(fillerGate(0, never)).resolves.toBe(true);
   });
 });

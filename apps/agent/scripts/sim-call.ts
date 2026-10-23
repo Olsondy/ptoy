@@ -97,7 +97,10 @@ const cleanups: (() => Promise<void> | void)[] = [];
 async function main(): Promise<number> {
   const env: NodeJS.ProcessEnv = { ...process.env, AGENT_PIPELINE: 'conversation', LIVEKIT_AGENT_NAME: '' };
   // The barge-in check interrupts the filler of the turn before: that turn must not skip it.
-  if (bargeInMs !== undefined) env.FILLERS_ALWAYS = 'true';
+  if (bargeInMs !== undefined) {
+    env.FILLERS_ALWAYS = 'true';
+    env.FILLER_DELAY_MS = '0';
+  }
   const scratch = mkdtempSync(join(tmpdir(), 'ptoy-sim-'));
   cleanups.push(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -467,7 +470,7 @@ function checkEmotions(requests: Record<string, unknown>[], ttsCalls: Record<str
 /**
  * Per-turn checks on what the caller received:
  * - subtitles: only the reply text, no `[...]` tag, no filler text (exact text with the fake LLM)
- * - with a filler: the reply audio never cuts into it — first to last audible frame spans at least
+ * - with a filler (not skipped): the reply audio never cuts into it — first to last audible frame spans at least
  *   filler + reply (one track, so an overlap would show up as a shortened filler or reply)
  * - fillers: never the same one two turns in a row
  */
@@ -489,7 +492,8 @@ function checkTurns(
     if (heard !== r.heard) out(`NOTE turn ${i + 1}: dropped reply flashed subtitle "${r.heard.split(' / ')[0]}"`);
     if (fakes.has('llm') && fakes.has('asr') && heard !== fakeReply(spokenText(r.said))) problems.push(`turn ${i + 1}: subtitle "${r.heard}" ≠ reply`);
     if (!t || typeof t.filler !== 'string') return;
-    const fillerMs = Number(t.fillerAudioMs ?? 0);
+    // A filler skipped by FILLER_DELAY_MS (reply ready first) made no sound.
+    const fillerMs = t.fillerSkipped ? 0 : Number(t.fillerAudioMs ?? 0);
     const replyMs = Number(t.ttsAudioMs ?? 0);
     const first = r.bursts[0];
     const last = r.bursts.at(-1);

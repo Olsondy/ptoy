@@ -62,11 +62,19 @@ export class FillerBank {
   }
 }
 
-/** Fresh frame stream for one playback (the frames' PCM is shared, the frame objects are not). */
-export function fillerAudio(filler: Filler): ReadableStream<AudioFrame> {
+/**
+ * Fresh frame stream for one playback (the frames' PCM is shared, the frame objects are not).
+ * With `play`, the first frame waits for it: `false` ends the stream with no audio at all, so the
+ * filler finishes without ever making the agent speak.
+ */
+export function fillerAudio(filler: Filler, play?: Promise<boolean>): ReadableStream<AudioFrame> {
   let i = 0;
   return new ReadableStream<AudioFrame>({
-    pull(controller) {
+    async pull(controller) {
+      if (i === 0 && play && !(await play)) {
+        controller.close();
+        return;
+      }
       const f = filler.frames[i++];
       if (!f) {
         controller.close();
@@ -129,4 +137,19 @@ async function readFillerBank(manifestPath: string, sampleRate: number, always: 
   }
   if (fillers.length === 0) throw new Error(`Filler manifest ${manifestPath} has no fillers`);
   return new FillerBank(fillers, Math.random, always);
+}
+
+/**
+ * Whether a delayed filler should play: `true` once `delayMs` has passed, `false` if the reply's
+ * first audio (`replyReady`) came first. `delayMs` 0 plays at once.
+ */
+export function fillerGate(delayMs: number, replyReady: Promise<void>): Promise<boolean> {
+  if (delayMs <= 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(true), delayMs);
+    void replyReady.then(() => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
 }
