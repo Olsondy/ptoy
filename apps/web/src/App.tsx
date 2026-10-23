@@ -19,6 +19,7 @@ export function App() {
 
   return (
     <main className="call">
+      <CharacterPicker {...characters} disabled={inCall} />
       <p className="call-status" data-testid="call-status" data-status={call.status} aria-live="polite">
         <span className={`dot dot-${call.status}`} aria-hidden="true" />
         {STATUS_LABEL[call.status]}
@@ -36,7 +37,6 @@ export function App() {
       )}
 
       <div className="call-footer">
-        <CharacterPicker {...characters} disabled={inCall} />
         {call.error && (
           <p className="call-error" role="alert" data-testid="call-error">
             {call.error}
