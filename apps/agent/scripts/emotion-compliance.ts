@@ -3,6 +3,7 @@
  *
  *   pnpm --filter @ptoy/agent emotion:compliance                       # LLM_BASE_URL from .env
  *   pnpm --filter @ptoy/agent emotion:compliance -- --runs 2 --json
+ *   pnpm --filter @ptoy/agent emotion:compliance -- --character zhixia  # default: DEFAULT_CHARACTER
  *
  * Replays scripted conversations the way the agent does: each user line is sent with its tone
  * prefix (`[用户语气:X]`, none for 平静), and the model's own past replies go back into the
@@ -11,16 +12,16 @@
  * hints and the emotions used per caller tone. Change the prompt, rerun, compare.
  */
 import { createSegmenter, type Emotion, EMOTIONS } from '@ptoy/segmenter';
-import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { DEFAULT_CHARACTER_PROMPT_FILE } from '../src/config.js';
+import { loadCharacters } from '../src/characters.js';
+import { DEFAULT_CHARACTERS_DIR } from '../src/config.js';
 import { withTone } from '../src/emotion/user-tone.js';
 
 const { values } = parseArgs({
   args: process.argv.slice(2).filter((a) => a !== '--'),
   options: {
     runs: { type: 'string', default: '1' },
-    prompt: { type: 'string', default: process.env.CHARACTER_PROMPT_FILE ?? DEFAULT_CHARACTER_PROMPT_FILE },
+    character: { type: 'string', default: process.env.DEFAULT_CHARACTER ?? 'xiaoyou' },
     json: { type: 'boolean', default: false },
   },
 });
@@ -28,7 +29,8 @@ const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace
 const model = process.env.LLM_MODEL ?? 'qwen3-8b';
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
 const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 150);
-const system = readFileSync(values.prompt, 'utf8').trim();
+const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
+const system = catalog.defaultCharacter.instructions;
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
 type Turn = readonly [tone: Emotion, text: string];
@@ -162,7 +164,7 @@ async function main(): Promise<void> {
     for (const e of s.emotions) row[e] = (row[e] ?? 0) + 1;
   }
   const summary = {
-    prompt: values.prompt,
+    character: values.character,
     model,
     replies,
     repliesFullyTagged: `${fullyTagged}/${replies} (${Math.round((fullyTagged / replies) * 100)}%)`,
