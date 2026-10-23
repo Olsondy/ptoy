@@ -31,6 +31,12 @@ export interface SegmenterOptions {
    * literal text; anything closed within it is a tag (dropped if unknown). Default 10.
    */
   readonly maxTagChars?: number;
+  /**
+   * Drop interjections the reply opens with ("嗯，" "好的，" "这样啊，"…, see {@link LEADING_INTERJECTION}).
+   * The LLM keeps starting replies with them, so every turn began with the same "嗯". A reply that
+   * is nothing but an interjection is still spoken. Default false.
+   */
+  readonly dropLeadingInterjection?: boolean;
 }
 
 export const DEFAULT_OPTIONS: Required<SegmenterOptions> = {
@@ -39,7 +45,11 @@ export const DEFAULT_OPTIONS: Required<SegmenterOptions> = {
   maxSegmentChars: 40,
   emotionScope: "sentence",
   maxTagChars: 10,
+  dropLeadingInterjection: false,
 };
+
+/** One opening interjection plus the punctuation after it; "好的电影" or "嗯我觉得" (no punctuation) stay. */
+const LEADING_INTERJECTION = /^(?:嗯+|哦+|噢+|喔+|唔+|啊|好的|好呀|好啊|好嘞|我明白了?|明白了?|我想想|这样啊)[\p{P}\s～~]+/u;
 
 const TAG_OPEN = new Set(["[", "【"]);
 const TAG_CLOSE = new Set(["]", "】"]);
@@ -81,6 +91,8 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   let firstDone = false;
   let emotion: Emotion = DEFAULT_EMOTION;
   let tagged = false;
+  /** Interjections dropped from the reply start, spoken only if nothing else follows. */
+  let dropped = "";
 
   /**
    * Find the next cut in the buffer, or null if more input is needed.
@@ -116,8 +128,17 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   }
 
   function emit(text: string, out: Segment[]): void {
-    const clean = normalize(text);
+    let clean = normalize(text);
     if (!hasContent(clean)) return;
+    if (!firstDone && opts.dropLeadingInterjection) {
+      let rest = clean;
+      for (let m = LEADING_INTERJECTION.exec(rest); m; m = LEADING_INTERJECTION.exec(rest)) rest = rest.slice(m[0].length);
+      if (!hasContent(rest)) {
+        dropped += clean;
+        return;
+      }
+      clean = normalize(rest);
+    }
     out.push({ text: clean, emotion });
     firstDone = true;
   }
@@ -184,6 +205,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     firstDone = false;
     emotion = DEFAULT_EMOTION;
     tagged = false;
+    dropped = "";
   }
 
   return {
@@ -198,6 +220,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
       const out: Segment[] = [];
       drain(out);
       emit(buffer, out);
+      if (!firstDone && dropped) out.push({ text: dropped, emotion });
       clear();
       return out;
     },
