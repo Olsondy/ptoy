@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "sim:call": "tsx --env-file-if-exists=.env scripts/sim-call.ts",
-    "emotion:compliance": "tsx --env-file-if-exists=.env scripts/emotion-compliance.ts"
+    "emotion:compliance": "tsx --env-file-if-exists=.env scripts/emotion-compliance.ts",
+    "chat": "tsx --env-file-if-exists=.env scripts/chat.ts"
   },
   "dependencies": {
     "@livekit/agents": "^1.9.3",

@@ -298,6 +298,8 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 一轮在 AI 回复写入对话历史时结束；没有回复时（LLM 失败、开口前被打断）在下一轮开始或会话关闭时输出。
 
+**文字对话**：`pnpm --filter @ptoy/agent chat -- --character <id>` 在终端里和角色打字聊天，发给 LLM 的内容和通话完全一致（system = 人设 + `_rules.md`，正在回答的那句带 `[用户语气:X]`，历史里 AI 的回复是去掉标签后实际念出的文本，`temperature` / `max_tokens` 取 `.env`），用来调人设；不要用网页聊天界面判断通话效果（它把设定当 user 消息、采样参数和历史都不同）。输入 `怒:…` 模拟来电者语气，`--show-request` 打印每次的请求体，`/history` 看历史。
+
 **模拟通话**：`pnpm --filter @ptoy/agent sim:call -- --turns "你好|..."` 启动 Agent worker，用 macOS `say` 的中文语音当来电者逐轮说话，打印每轮收到的音频（含按静音切开的音频段）、字幕、`ptoy.agent_error` 和 `turn timing`；`--fake asr,llm,tts` 换成进程内假服务，`--fail llm|tts` 验证故障提示，`--barge-in N` 让来电者在倒数第二轮 AI 出声 N ms 后插话（语气词期间、回复中、语气词后回复未开播时配合 `--tts-ms 2500`；最后一轮是“嗯”时测附和），检查从开口到 AI 音频停下不超过 `--max-stop-ms`（300）、来电者说话期间没有漏音、下一轮 LLM 请求里被打断的回复只有播放过的前缀；轮次里的 `~` 是 `--pause-ms` 长的停顿，每轮被拆成多轮会报错；设 `LIVEKIT_SERVER_BIN` 时自带一个临时 LiveKit。每轮检查：字幕不含标签（假 LLM 时与回复逐字相同）、语气词与回复的音频跨度不短于两者之和（无重叠/截断）、语气词不连续重复。
 
 **实测（Mac 经 Wi-Fi 调 Windows 的 LLM 和 TTS，ASR 跑在 Intel Mac CPU 上；按规则这组数据不作数，只用来看各段比例）**，6 轮连续对话，上下文连贯（第 5 轮记得名字，第 6 轮能概括前面聊过的话题）：
