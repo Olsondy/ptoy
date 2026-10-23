@@ -1,0 +1,3 @@
+-r requirements.txt
+# TestClient
+httpx>=0.24
