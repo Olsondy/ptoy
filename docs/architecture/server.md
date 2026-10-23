@@ -138,11 +138,12 @@ SenseVoice 的本地 `server.py` 基于 FunASR 1.4.14 和 PyTorch 2.8.0+cu128，
 - 拟合约 **1.1s 固定开销 + 73ms/字**，与 Gradio 的 770ms + 89ms/字 相当。**Gradio 的固定开销主要来自模型本身**（自回归语义 token + 25 步扩散 + 声码器），不是 Gradio 的排队和文件读写；换 FastAPI 本身不降延迟
 - FastAPI 的实际收益：打断时取消合成、免上传参考音频、内存返回 PCM；显存整卡 13.6 / 16GB（服务约 5.5GB，含 llama-server）
 - `/health` 显示该版本 `infer` 支持内存返回（`output_mode: memory`）和 `stream_return`，没有 `diffusion_steps` 参数
-- 下一步降延迟的手段：`TTS_ACCEL=1`（GPT 加速，需 accel 可选依赖）、`TTS_DIFFUSION_STEPS`（替换 `s2mel` 的步数，待验证是否生效及音质）、`stream_return`（只对多段长句有效）
+- 下一步降延迟的手段：`TTS_ACCEL=1`（GPT 加速，需 accel 可选依赖）、`TTS_DIFFUSION_STEPS`（替换 `s2mel` 的步数）、`stream_return`（只对多段长句有效）
+- 2026-10-24 `TTS_DIFFUSION_STEPS=15` 通话实测（voice chunqing、情绪向量）：生效（进度条 15/15），8～9 字 synth 1.3～1.6s、26 字 2.75s，RTF 0.57～0.83（25 步时短句 RTF > 1，后句合成慢于前句播放，句间有停顿）。耗时拆分：GPT 0.75s（短句）～2.0s（26 字）、s2mel ~0.5s、BigVGAN ~0.1s，**剩余大头是 GPT 自回归**，再降步数到 10 只省约 0.15s；下一步是 `TTS_ACCEL`
 
-| 指标 | Gradio（上表） | FastAPI 默认（25 步） | FastAPI 降步数（`TTS_DIFFUSION_STEPS=?`） |
+| 指标 | Gradio（上表） | FastAPI 默认（25 步） | FastAPI 降步数（`TTS_DIFFUSION_STEPS=15`） |
 |---|---|---|---|
-| 耗时拟合：固定开销 + 每字 | 770ms + 89ms/字 | ~1.1s + 73ms/字（初测） | 待测 |
+| 耗时拟合：固定开销 + 每字 | 770ms + 89ms/字 | ~1.1s + 73ms/字（初测） | ~0.65s + 80ms/字（通话实测） |
 | 取消 → GPU 空闲 | 不能取消，跑完为止 | 待测 | — |
 | 显存（整卡，含 LLM） | 13.8 / 16GB | 13.6 / 16GB | — |
 | 音质（试听 `--save-wavs`） | 基准 | 基准 | 待评 |
