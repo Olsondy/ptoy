@@ -23,7 +23,7 @@ Copy-Item apps\agent\.env.example apps\agent\.env
 
 ```ini
 LIVEKIT_SERVER_BIN=C:\livekit\livekit-server.exe   # 从 https://github.com/livekit/livekit/releases 下载
-ASR_URL=http://127.0.0.1:8100                      # 模型服务地址
+ASR_URL=http://127.0.0.1:8001                      # 模型服务地址
 LLM_BASE_URL=http://127.0.0.1:8080/v1
 TTS_GRADIO_URL=http://127.0.0.1:7860
 TTS_REF_AUDIO=C:\path\to\ref.wav                   # 角色音色参考音频

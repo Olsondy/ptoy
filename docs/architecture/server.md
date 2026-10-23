@@ -44,7 +44,7 @@
 └────────────────────────┬───────────────────────────────┘
                          │ HTTP（局域网 / localhost）
 ┌─ Windows GPU 主机（16GB）────────────────────────────────┐
-│ ASR：SenseVoice-Small :8100（CPU） 输出文本 + 情绪/事件标签 │
+│ ASR：SenseVoice-Small :8001（CPU） 输出文本 + 情绪/事件标签 │
 │ LLM：llama-server :8080 · Qwen3-8B Q5_K_M · 思考模式关闭    │
 │ TTS：IndexTTS2 · 阶段 1 用 Gradio :7860 / 阶段 2 用 FastAPI │
 └─────────────────────────────────────────────────────────┘
@@ -137,7 +137,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 应用（LiveKit、token 服务、Agent、网页）用仓库根目录的 `pnpm app` 一条命令启动，见 `README.md`。模型服务由用户自行维护，应用只通过 `apps/agent/.env` 里配置的地址连接它们。
 
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
-- 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860、8080、8100（ASR）
+- 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860、8080、8001（ASR）
 - 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS（例如反向代理），目前未提供
 
 ## 10. 待定事项
@@ -148,7 +148,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 11. 轮次检测与 STT 插件（M1 #8 实测）
 
-**链路**：`inference.VAD`（Silero）切出整句 → `SenseVoiceSTT`（`apps/agent/src/stt/sensevoice.ts`，非流式，框架用 `stt.StreamAdapter` 包装）把 48kHz 帧降到 16kHz 单声道 s16le 后 `POST /asr` → 最终文本经 LiveKit 标准 `lk.transcription` 文本流（发送者是用户本人）到浏览器，`UserSubtitle` 显示最新一句。VAD 和轮次模型都走 `@livekit/local-inference`，进程内推理，不调 LiveKit Cloud；它有 darwin-x64/arm64、win32-x64 预编译包。`@livekit/agents-plugin-silero` / `-livekit` 依赖 `onnxruntime-node`，后者已不提供 Intel Mac 二进制，所以没用。
+**链路**：`inference.VAD`（Silero）切出整句 → `SenseVoiceSTT`（`apps/agent/src/stt/sensevoice.ts`，非流式，框架用 `stt.StreamAdapter` 包装）把 48kHz 帧降到 16kHz 单声道、封成 WAV，以 multipart `file` 发到 ASR 服务的 OpenAI 兼容接口 `POST /v1/audio/transcriptions`（`response_format=json`，返回 `text`、`raw_text`、`elapsed_seconds`；情绪和事件从 `raw_text` 里的 SenseVoice 标签解析） → 最终文本经 LiveKit 标准 `lk.transcription` 文本流（发送者是用户本人）到浏览器，`UserSubtitle` 显示最新一句。VAD 和轮次模型都走 `@livekit/local-inference`，进程内推理，不调 LiveKit Cloud；它有 darwin-x64/arm64、win32-x64 预编译包。`@livekit/agents-plugin-silero` / `-livekit` 依赖 `onnxruntime-node`，后者已不提供 Intel Mac 二进制，所以没用。
 
 **默认参数**（环境变量见 `apps/agent/.env.example`）：
 

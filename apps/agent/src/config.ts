@@ -45,7 +45,7 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
 }
 
 const callSchema = z.object({
-  ASR_URL: z.string().url().default('http://localhost:8100'),
+  ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
   ASR_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   ASR_LANGUAGE: z.string().min(2).default('zh'),
   TURN_DETECTOR: z.enum(['vad', 'eot']).default('vad'),

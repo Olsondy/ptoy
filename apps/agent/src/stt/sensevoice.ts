@@ -1,10 +1,13 @@
 import { APIError, type AudioBuffer, log, mergeFrames, stt } from '@livekit/agents';
 import { AudioFrame, AudioResampler, AudioResamplerQuality } from '@livekit/rtc-node';
 
-/** The ASR service only accepts 16 kHz mono s16le (services/asr/README.md). */
+/** Audio is sent as a 16 kHz mono 16-bit WAV, SenseVoice's native rate. */
 export const ASR_SAMPLE_RATE = 16000;
 
-/** SenseVoice emotion classes as returned by the ASR service. */
+/** OpenAI-compatible transcription endpoint of the SenseVoice ASR service, relative to `ASR_URL`. */
+const TRANSCRIPTIONS_PATH = 'v1/audio/transcriptions';
+
+/** SenseVoice emotion classes, from the `<|EMOTION|>` tag in the service's `raw_text`. */
 export type AsrEmotion =
   | 'neutral'
   | 'happy'
@@ -15,7 +18,7 @@ export type AsrEmotion =
   | 'surprised'
   | 'unknown';
 
-/** SenseVoice audio events as returned by the ASR service. */
+/** SenseVoice audio events, from the `<|Event|>` tag in the service's `raw_text`. */
 export type AsrEvent = 'speech' | 'bgm' | 'applause' | 'laughter' | 'cry' | 'sneeze' | 'breath' | 'cough';
 
 const EMOTIONS: ReadonlySet<string> = new Set<AsrEmotion>([
@@ -60,8 +63,8 @@ export interface AsrTranscript extends AsrMetadata {
  * Why a recognition failed:
  * - `timeout`: no response within `timeoutMs`
  * - `unreachable`: connection refused / DNS / socket error
- * - `service`: the service answered with an error status (`status`, `code` from its `{ error }` body)
- * - `bad_response`: 200 but the body is not the documented `{ text, emotion, events, duration_ms }`
+ * - `service`: the service answered with an error status (`status`, `code` from an `{ error }` body if any)
+ * - `bad_response`: 200 but the body has no string `text`
  */
 export type AsrErrorKind = 'timeout' | 'unreachable' | 'service' | 'bad_response';
 
@@ -82,13 +85,13 @@ export class AsrError extends APIError {
 }
 
 export interface SenseVoiceSTTOptions {
-  /** Base URL of the ASR service, e.g. `http://localhost:8100`. */
+  /** Base URL of the ASR service, e.g. `http://127.0.0.1:8001` (the plugin appends `/v1/audio/transcriptions`). */
   readonly baseUrl: string;
   /** Per-request timeout in milliseconds. */
   readonly timeoutMs: number;
   /**
-   * Language reported on transcripts. The service strips SenseVoice's language tag, so this is a
-   * fixed hint; the end-of-turn model uses it to pick its per-language threshold.
+   * Language reported on transcripts (the service auto-detects the spoken language); the
+   * end-of-turn model uses it to pick its per-language threshold.
    */
   readonly language?: string;
   /** Called for every non-empty recognized utterance (text + emotion + events). */
@@ -118,7 +121,7 @@ function downmix(frame: AudioFrame): AudioFrame {
   return new AudioFrame(mono, frame.sampleRate, 1, frame.samplesPerChannel);
 }
 
-/** Converts one utterance to the 16 kHz mono s16le the ASR service expects. */
+/** Converts one utterance to 16 kHz mono s16le. */
 export function toAsrPcm(buffer: AudioBuffer): Int16Array {
   const mono = downmix(mergeFrames(buffer));
   if (mono.sampleRate === ASR_SAMPLE_RATE) return mono.data;
@@ -131,24 +134,57 @@ export function toAsrPcm(buffer: AudioBuffer): Int16Array {
   }
 }
 
+/** Wraps 16 kHz mono s16le PCM in a WAV container. */
+export function toWav(pcm: Int16Array): Buffer {
+  const header = Buffer.alloc(44);
+  const dataBytes = pcm.byteLength;
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataBytes, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(ASR_SAMPLE_RATE, 24);
+  header.writeUInt32LE(ASR_SAMPLE_RATE * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataBytes, 40);
+  return Buffer.concat([header, Buffer.from(pcm.buffer, pcm.byteOffset, dataBytes)]);
+}
+
+const TAG = /<\|([^|>]*)\|>/g;
+
+/** Reads emotion and events from SenseVoice's raw tags, e.g. `<|zh|><|NEUTRAL|><|Speech|><|withitn|>…`. */
+function parseTags(raw: string): { emotion: AsrEmotion; events: AsrEvent[] } {
+  let emotion: AsrEmotion = 'unknown';
+  const events: AsrEvent[] = [];
+  for (const [, tag = ''] of raw.matchAll(TAG)) {
+    const name = tag.toLowerCase();
+    if (emotion === 'unknown' && EMOTIONS.has(name)) emotion = name as AsrEmotion;
+    else if (EVENTS.has(name) && !events.includes(name as AsrEvent)) events.push(name as AsrEvent);
+  }
+  return { emotion, events };
+}
+
 function parseResult(body: unknown): { text: string; emotion: AsrEmotion; events: AsrEvent[]; durationMs: number } {
   if (!body || typeof body !== 'object') throw new AsrError('bad_response', 'ASR response is not a JSON object');
   const b = body as Record<string, unknown>;
   if (typeof b.text !== 'string') throw new AsrError('bad_response', 'ASR response has no string `text`');
-  const emotion = typeof b.emotion === 'string' && EMOTIONS.has(b.emotion) ? (b.emotion as AsrEmotion) : 'unknown';
-  const events = Array.isArray(b.events)
-    ? b.events.filter((e): e is AsrEvent => typeof e === 'string' && EVENTS.has(e))
-    : [];
-  const durationMs = typeof b.duration_ms === 'number' ? b.duration_ms : 0;
-  return { text: b.text.trim(), emotion, events, durationMs };
+  const raw = Array.isArray(b.raw_text) ? b.raw_text.filter((r) => typeof r === 'string').join('') : b.raw_text;
+  const { emotion, events } = typeof raw === 'string' ? parseTags(raw) : { emotion: 'unknown' as const, events: [] };
+  const durationMs = typeof b.elapsed_seconds === 'number' ? Math.round(b.elapsed_seconds * 1000) : 0;
+  return { text: b.text.replace(TAG, '').trim(), emotion, events, durationMs };
 }
 
 async function readErrorBody(res: Response): Promise<{ code?: string; message?: string }> {
   try {
-    const body = (await res.json()) as { error?: unknown; message?: unknown };
+    const body = (await res.json()) as { error?: unknown; message?: unknown; detail?: unknown };
+    const detail = typeof body.detail === 'string' ? body.detail : undefined;
     return {
       code: typeof body.error === 'string' ? body.error : undefined,
-      message: typeof body.message === 'string' ? body.message : undefined,
+      message: typeof body.message === 'string' ? body.message : detail,
     };
   } catch {
     return {};
@@ -156,7 +192,8 @@ async function readErrorBody(res: Response): Promise<{ code?: string; message?: 
 }
 
 /**
- * Non-streaming STT backed by the SenseVoice ASR service (`POST /asr`).
+ * Non-streaming STT backed by a SenseVoice ASR service with an OpenAI-compatible
+ * `POST /v1/audio/transcriptions` (multipart `file`, `response_format=json` → `{ text, raw_text, elapsed_seconds }`).
  *
  * It recognizes one whole utterance per call, so `AgentSession` wraps it in `stt.StreamAdapter`
  * with the session's VAD: the VAD cuts utterances, each one becomes one FINAL_TRANSCRIPT.
@@ -173,7 +210,7 @@ export class SenseVoiceSTT extends stt.STT {
   constructor(opts: SenseVoiceSTTOptions) {
     super({ streaming: false, interimResults: false });
     this.#opts = opts;
-    this.#endpoint = new URL('/asr', opts.baseUrl).toString();
+    this.#endpoint = new URL(TRANSCRIPTIONS_PATH, opts.baseUrl.endsWith('/') ? opts.baseUrl : `${opts.baseUrl}/`).toString();
     this.#fetch = opts.fetch ?? fetch;
   }
 
@@ -229,12 +266,10 @@ export class SenseVoiceSTT extends stt.STT {
     const signal = abortSignal ? AbortSignal.any([abortSignal, timeout]) : timeout;
     let res: Response;
     try {
-      res = await this.#fetch(this.#endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': `audio/pcm;rate=${ASR_SAMPLE_RATE};channels=1` },
-        body: Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength),
-        signal,
-      });
+      const form = new FormData();
+      form.append('file', new Blob([toWav(pcm)], { type: 'audio/wav' }), 'utterance.wav');
+      form.append('response_format', 'json');
+      res = await this.#fetch(this.#endpoint, { method: 'POST', body: form, signal });
     } catch (error) {
       if (timeout.aborted) {
         throw new AsrError('timeout', `ASR did not respond within ${this.#opts.timeoutMs}ms`, { cause: error });
