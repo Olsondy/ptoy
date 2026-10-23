@@ -142,6 +142,14 @@ class EngineTest(unittest.TestCase):
         self.assertEqual((call["top_k"], call["top_p"], call["max_mel_tokens"]), (20, 0.8, 1500))
         self.assertEqual((call["lang"], call["duration_factor"]), ("ZH", 1.0))
 
+    def test_per_call_generation_overrides_the_configured_sampling(self):
+        e = self.engine(TTS_TOP_K="20")
+        e.synthesize("你好。", None, 1.0, lambda: False, generation={"temperature": 0.5})
+        call = FakeIndexTTS2.instances[0].calls[-1]
+        self.assertEqual((call["temperature"], call["top_k"], call["top_p"]), (0.5, 20, 0.8))
+        e.synthesize("你好。", None, 1.0, lambda: False)
+        self.assertEqual(FakeIndexTTS2.instances[0].calls[-1]["temperature"], 0.8)
+
     def test_falls_back_to_temp_file_when_infer_needs_an_output_path(self):
         FakeIndexTTS2.memory_output = False
         e = self.engine()

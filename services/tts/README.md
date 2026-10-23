@@ -60,6 +60,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 - `emotion`：可选，`喜 怒 哀 惧 厌恶 低落 惊喜 平静` 之一。`平静` 或不填 = 情绪跟随音色参考音频；其余映射为 one-hot 情感向量（下标顺序同 `@ptoy/segmenter` 的 `EMOTION_VECTOR_INDEX`），再经 IndexTTS2 `normalize_emo_vec(apply_bias=True)`，与 WebUI「使用情感向量控制」一致
 - `emotion_vector`：可选，8 个 `[0,1]` 的浮点数，和 `emotion` 二选一；全 0 等同跟随参考音频
 - `emo_alpha`：可选，`[0,1]`，默认 `TTS_EMO_ALPHA`
+- `generation`：可选，只对本次请求覆盖采样参数 `{ temperature?, top_p?, top_k?, repetition_penalty? }`，不填的用 `TTS_*` 配置值。用于调参（`bench/compare_ref_audio.py --backend fastapi --sweep ...`），Agent 不发
 - `request_id`：可选，用于取消；不填由服务生成
 
 成功 `200`，body 是裸 PCM：**s16le、单声道**，响应头：
@@ -84,7 +85,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 
 ### `GET /health`
 
-`{ status, queued, running, model, precision, sample_rate, output_mode, diffusion, generation, infer, load_ms, warmup_ms, vram_mib }`。
+`{ status, queued, running, model, precision, sample_rate, output_mode, diffusion, generation, infer, load_ms, warmup_ms, vram_mib, generation_overrides }`。`generation_overrides` 列出 `generation` 字段可覆盖的参数。
 
 ## GPU 串行
 

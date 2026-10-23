@@ -4,7 +4,7 @@ No torch / indextts imports here: the model sits behind the `Engine` protocol (r
 `engine.py`), so this module is unit-tested with a fake engine on any machine.
 
 API (see README.md):
-  POST /tts              {text, emotion?, emotion_vector?, emo_alpha?, request_id?} → s16le mono PCM
+  POST /tts              {text, emotion?, emotion_vector?, emo_alpha?, generation?, request_id?} → s16le mono PCM
   POST /cancel/{id}      drop a queued request / discard (and best-effort abort) a running one
   GET  /health           model info, queue state, VRAM
 """
@@ -44,8 +44,11 @@ class Engine(Protocol):
         emo_vector: Optional[list[float]],
         emo_alpha: float,
         should_abort: Callable[[], bool],
+        generation: Optional[dict[str, Any]] = None,
     ) -> np.ndarray:
-        """Returns mono int16 PCM at `sample_rate`. May raise `SynthesisAborted` once `should_abort()` is true."""
+        """Returns mono int16 PCM at `sample_rate`. May raise `SynthesisAborted` once `should_abort()` is true.
+
+        `generation` overrides the configured sampling parameters for this call only."""
         ...
 
     def info(self) -> dict[str, Any]:
@@ -84,11 +87,23 @@ def emotion_vector(emotion: Optional[str], vector: Optional[list[float]]) -> Opt
     return [1.0 if e == emotion else 0.0 for e in EMOTIONS]
 
 
+class GenerationOverrides(BaseModel):
+    """Per-request sampling overrides (for tuning without restarting the service); missing = TTS_* env value."""
+
+    model_config = {"extra": "forbid"}
+
+    temperature: Optional[float] = Field(default=None, gt=0.0, le=2.0)
+    top_p: Optional[float] = Field(default=None, gt=0.0, le=1.0)
+    top_k: Optional[int] = Field(default=None, ge=0)
+    repetition_penalty: Optional[float] = Field(default=None, ge=1.0)
+
+
 class TtsRequest(BaseModel):
     text: str = Field(min_length=1)
     emotion: Optional[Literal["喜", "怒", "哀", "惧", "厌恶", "低落", "惊喜", "平静"]] = None
     emotion_vector: Optional[list[float]] = Field(default=None, min_length=8, max_length=8)
     emo_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    generation: Optional[GenerationOverrides] = None
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("text")
@@ -114,11 +129,15 @@ class TtsRequest(BaseModel):
 
 
 class Job:
-    def __init__(self, job_id: str, text: str, emo_vector: Optional[list[float]], emo_alpha: float):
+    def __init__(
+        self, job_id: str, text: str, emo_vector: Optional[list[float]], emo_alpha: float,
+        generation: Optional[dict[str, Any]] = None,
+    ):
         self.id = job_id
         self.text = text
         self.emo_vector = emo_vector
         self.emo_alpha = emo_alpha
+        self.generation = generation
         self.future: concurrent.futures.Future = concurrent.futures.Future()
         self.cancelled = threading.Event()
         self.state: Literal["queued", "running", "done"] = "queued"
@@ -224,7 +243,9 @@ class SynthesisQueue:
                 self._running = job
             result, error = None, None
             try:
-                result = self._engine.synthesize(job.text, job.emo_vector, job.emo_alpha, job.cancelled.is_set)
+                result = self._engine.synthesize(
+                    job.text, job.emo_vector, job.emo_alpha, job.cancelled.is_set, generation=job.generation,
+                )
             except SynthesisAborted:
                 error = JobCancelled()
             except BaseException as exc:  # noqa: BLE001 - report any engine failure to the caller
@@ -266,7 +287,8 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
             return _error(422, "text_too_long", f"text has {len(body.text)} chars, max {max_text_chars}")
         job_id = body.request_id or uuid.uuid4().hex
         alpha = default_emo_alpha if body.emo_alpha is None else body.emo_alpha
-        job = Job(job_id, body.text, emotion_vector(body.emotion, body.emotion_vector), alpha)
+        generation = body.generation.model_dump(exclude_none=True) if body.generation else None
+        job = Job(job_id, body.text, emotion_vector(body.emotion, body.emotion_vector), alpha, generation or None)
         headers = {"X-Request-Id": job_id}
         try:
             fut = queue.submit(job)
@@ -320,6 +342,9 @@ def create_app(engine: Engine, *, default_emo_alpha: float = 0.65, max_text_char
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", **queue.stats(), **engine.info()}
+        return {
+            "status": "ok", **queue.stats(), **engine.info(),
+            "generation_overrides": list(GenerationOverrides.model_fields),
+        }
 
     return app
