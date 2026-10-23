@@ -48,6 +48,26 @@ function portOpen(port, host = '127.0.0.1') {
   });
 }
 
+const LEVELS = { 10: 'TRACE', 20: 'DEBUG', 30: 'INFO', 40: 'WARN', 50: 'ERROR', 60: 'FATAL' };
+const PINO_META = new Set(['level', 'time', 'pid', 'hostname', 'msg', 'v']);
+
+// The agent's production mode logs pino JSON; show it as "HH:MM:SS LEVEL msg key=value ...".
+function readable(line) {
+  if (!line.startsWith('{')) return line;
+  try {
+    const entry = JSON.parse(line);
+    if (typeof entry.msg !== 'string') return line;
+    const time = new Date(entry.time ?? Date.now()).toTimeString().slice(0, 8);
+    const fields = Object.entries(entry)
+      .filter(([key]) => !PINO_META.has(key))
+      .map(([key, value]) => `${key}=${typeof value === 'object' ? JSON.stringify(value) : value}`)
+      .join(' ');
+    return `${time} ${(LEVELS[entry.level] ?? entry.level).toString().padEnd(5)} ${entry.msg}${fields ? `  ${fields}` : ''}`;
+  } catch {
+    return line;
+  }
+}
+
 function start(name, command, args, extraEnv = {}) {
   const child = spawn(command, args, {
     cwd: root,
@@ -62,7 +82,7 @@ function start(name, command, args, extraEnv = {}) {
       buffered += chunk.toString();
       const lines = buffered.split(/\r?\n/);
       buffered = lines.pop() ?? '';
-      for (const line of lines) out.write(`${prefix}${line}\n`);
+      for (const line of lines) out.write(`${prefix}${readable(line)}\n`);
     });
   };
   forward(child.stdout, process.stdout);
