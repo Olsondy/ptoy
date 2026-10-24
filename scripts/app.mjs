@@ -1,21 +1,28 @@
 // Starts ptoy in one terminal: LiveKit server, token server, agent and web.
-// Model service addresses come from apps/agent/.env.
-// Usage: pnpm app            (Ctrl+C stops everything it started)
+// Usage: pnpm app [--env hk] (Ctrl+C stops everything it started)
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseEnv } from 'node:util';
+import { environmentOptions, loadEnvironment, checkEnvironment, livekitArguments } from './environment.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const envFile = join(root, 'apps', 'agent', '.env');
 const isWindows = process.platform === 'win32';
-
-if (!existsSync(envFile)) {
-  fail('apps/agent/.env 不存在：先执行 cp apps/agent/.env.example apps/agent/.env 并填好');
+let options, env, envFile;
+try {
+  options = environmentOptions(process.argv.slice(2));
+  if (options.args.length) throw new Error('用法：pnpm app [--env hk] [--check-env]');
+  ({ env, file: envFile } = loadEnvironment(join(root, 'apps', 'agent'), options.name));
+  checkEnvironment(env);
+} catch (error) {
+  fail(error.message);
 }
-const env = { ...parseEnv(readFileSync(envFile, 'utf8')), ...process.env };
+if (options.check) {
+  console.log(`环境配置检查通过：${envFile}`);
+  process.exit(0);
+}
+const environmentArgs = options.name === undefined ? [] : ['--env', options.name];
 
 const tokenPort = Number(env.TOKEN_SERVER_PORT || 8787);
 const webPort = Number(env.WEB_PREVIEW_PORT || 4173);
@@ -145,9 +152,10 @@ if (livekitRunning) {
   log(`✓ LiveKit  已在 :${livekitPort} 运行，跳过启动`);
 } else {
   const bin = (env.LIVEKIT_SERVER_BIN ?? '').trim().replace(/^["']|["']$/g, '');
-  if (!bin) fail('apps/agent/.env 里的 LIVEKIT_SERVER_BIN 是空的：填 livekit-server 可执行文件的完整路径');
+  if (!bin) fail(`${envFile} 里的 LIVEKIT_SERVER_BIN 是空的：填 livekit-server 可执行文件的完整路径`);
   if (!existsSync(bin)) fail(`LIVEKIT_SERVER_BIN 指向的文件不存在：${bin}`);
-  const lkArgs = ['--dev', '--bind', '0.0.0.0', ...(env.LIVEKIT_NODE_IP ? ['--node-ip', env.LIVEKIT_NODE_IP] : [])];
+  let lkArgs;
+  try { lkArgs = livekitArguments(env); } catch (error) { fail(error.message); }
   start('livekit', bin, lkArgs);
 }
 
@@ -162,8 +170,8 @@ if (stopping || buildCode !== 0) {
     stopAll(1);
   }
 } else {
-  start('token', 'pnpm', ['--filter', '@ptoy/agent', 'start:token']);
-  start('agent', 'pnpm', ['--filter', '@ptoy/agent', 'start']);
+  start('token', 'pnpm', ['--filter', '@ptoy/agent', 'start:token', ...environmentArgs], env);
+  start('agent', 'pnpm', ['--filter', '@ptoy/agent', 'start', ...environmentArgs], env);
 
   // Wait for the API before exposing the web proxy to avoid startup ECONNREFUSED.
   const tokenDeadline = Date.now() + 30_000;

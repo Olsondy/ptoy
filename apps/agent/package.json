@@ -4,17 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --env-file-if-exists=.env src/agent.ts dev",
-    "start": "tsx --env-file-if-exists=.env src/agent.ts start",
-    "dev:token": "tsx watch --env-file-if-exists=.env src/token-server.ts",
-    "start:token": "tsx --env-file-if-exists=.env src/token-server.ts",
-    "invite": "tsx --env-file-if-exists=.env src/access/cli.ts",
+    "dev": "node ../../scripts/run-agent.mjs dev",
+    "start": "node ../../scripts/run-agent.mjs start",
+    "dev:token": "node ../../scripts/run-agent.mjs dev:token",
+    "start:token": "node ../../scripts/run-agent.mjs start:token",
+    "invite": "node ../../scripts/run-agent.mjs invite",
     "check:access-recovery": "tsx scripts/check-access-recovery.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "sim:call": "tsx --env-file-if-exists=.env scripts/sim-call.ts",
-    "emotion:compliance": "tsx --env-file-if-exists=.env scripts/emotion-compliance.ts",
-    "chat": "tsx --env-file-if-exists=.env scripts/chat.ts"
+    "sim:call": "node ../../scripts/run-agent.mjs sim:call",
+    "emotion:compliance": "node ../../scripts/run-agent.mjs emotion:compliance",
+    "chat": "node ../../scripts/run-agent.mjs chat"
   },
   "dependencies": {
     "@livekit/agents": "^1.9.3",

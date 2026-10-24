@@ -1,5 +1,6 @@
 # New ptoy RTC vhost only. Map RTC_DOMAIN on the existing HTTPS listener.
 # Its certificate belongs to RTC_DOMAIN; the backend uses loopback HTTP/WS.
+docRoot                   /var/www/ptoy/current/
 vhDomain                  RTC_DOMAIN
 
 extprocessor ptoy_livekit {

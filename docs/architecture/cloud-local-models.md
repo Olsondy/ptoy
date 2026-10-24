@@ -1,6 +1,6 @@
 # 云端应用与本地模型部署方案
 
-状态：方案已确认，部署脚本与配置已制作，尚未部署 · 2026-10-24
+状态：架构方案；HK 已于 2026-10-25 上线，实际部署与验证以 [server.md](server.md#9-运维注意) 和 [HK 运维说明](../../deploy/cloud/hk/README.md) 为准。
 
 应用部署在 Ubuntu 云服务器，通过 Tailscale 访问本地 Windows 模型。HTTPS 入口可替换，LiteSpeed 不是应用依赖：已有 Web 服务时复用入口，没有时使用 Caddy。当前香港服务器只是临时承载实例，接入时保留其 LiteSpeed 和 PHP 应用。本方案单独维护，不修改原本地部署文档或启动器。决策见 [ADR 0011](../decisions/0011-cloud-app-local-models.md)，执行入口见 [deploy/cloud/README.md](../../deploy/cloud/README.md)。
 
@@ -84,4 +84,4 @@ flowchart LR
 4. 验证邀请码进入、固定角色链接、真实通话、字幕、挂断、重连和单码单通话；覆盖家庭 Wi-Fi 与手机流量。
 5. 验证模型离线提示、恢复可用、维护时拒绝新通话及已有通话结束后更新；逐步测试 1、3、5 路通话，同时观察云端资源、本地模型排队及已有其他应用的响应。
 
-本方案已定稿；实际版本、地址和证书路径在部署前核验后填写。`deploy/cloud/` 已提供配置生成、安装、资源同步、排空发布、运维工具及三个 systemd 单元；入口提供独立 Caddy 配置，以及已有 OpenLiteSpeed / Enterprise 的接入模板。未连接或更改服务器，未在公网安装/启动服务，也未完成云端媒体与容量验收。
+本方案已定稿；实际版本、地址和证书路径在部署前核验后填写。`deploy/cloud/` 已提供配置生成、安装、资源同步、排空发布、运维工具及三个 systemd 单元；入口提供独立 Caddy 配置，以及已有 OpenLiteSpeed / Enterprise 的接入模板。这些是通用方案交付物；当前 HK 已采用独立 Node.js/systemd 布局上线并完成单通合成语音验证，多人容量尚未验收。

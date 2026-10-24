@@ -1,0 +1,27 @@
+[Unit]
+Description=ptoy HK voice agent
+After=network-online.target livekit-server.service ptoy-token.service tailscaled.service
+Wants=network-online.target livekit-server.service ptoy-token.service tailscaled.service
+
+[Service]
+Type=simple
+User=ptoy
+Group=ptoy
+Environment=HOME=/var/lib/ptoy
+Environment=XDG_CACHE_HOME=/var/cache/ptoy
+WorkingDirectory=/opt/ptoy/source/apps/agent
+ExecStart=/usr/local/bin/node /opt/ptoy/source/scripts/run-agent.mjs start --env hk
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=infinity
+SendSIGKILL=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ptoy /var/cache/ptoy
+LimitNOFILE=16384
+
+[Install]
+WantedBy=multi-user.target

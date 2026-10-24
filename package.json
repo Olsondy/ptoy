@@ -13,6 +13,7 @@
     "dev:token": "pnpm --filter @ptoy/agent dev:token",
     "build": "pnpm -r --if-present build",
     "test": "pnpm -r --if-present test",
+    "test:startup": "node --test scripts/environment.test.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
     "test:e2e": "pnpm --filter @ptoy/e2e test:e2e"
   },

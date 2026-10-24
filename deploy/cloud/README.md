@@ -2,6 +2,10 @@
 
 本目录提供与 Web 入口解耦的 ptoy 专用 systemd 服务与发布工具。**已有 Web 服务时复用；没有时使用 Caddy**，不要求安装 LiteSpeed。当前临时服务器保留 LiteSpeed 和 PHP 应用。脚本不自动改写 Web 入口、防火墙、Tailscale 或原本地启动方式；没有备份、对象存储或灾难恢复设施。
 
+**当前 HK 实例已上线，使用 [hk/README.md](hk/README.md)**：源码 `/opt/ptoy/source`，环境文件 `apps/agent/.env.hk`，服务通过 `--env hk` 启动，复用 `livekit-server.service`。本目录不保存另一份 HK `.env`，本地 `.env` 不变。
+
+下文是原有通用安装器的另一套部署布局，读取 `/etc/ptoy/app.env` 和 `/etc/ptoy/livekit.yaml`。它不是当前 HK 的更新入口；不要直接在该主机运行旧 `install.sh` / `release.sh`。当前版本、路径及验证结果以 [server.md](../../docs/architecture/server.md#9-运维注意) 为准。
+
 ## 准备
 
 在 Ubuntu 上准备源码、Node **22.13 或更高版本**、pnpm **10.18.0**、指定版本的 LiveKit Server，以及 `rsync`、`curl`、`flock`、`ss`。Node/pnpm/LiveKit 放在 root 管理的系统可执行目录；不能使用 `/root` 或 `/home` 下的个人 nvm 路径，也不能通过系统目录的符号链接绕回个人目录。安装器会校验可执行路径及版本，不下载或替换这些程序。
@@ -110,7 +114,7 @@ sudo -u ptoy /usr/bin/node --env-file=/etc/ptoy/app.env node_modules/tsx/dist/cl
 
 有旧站时确认其页面和登录仍正常；两个新域名的证书有效；未验证不能访问角色或拨号，`/internal/`不能从公网到达。用家庭 Wi-Fi 和手机流量分别完成邀请码验证、通话、字幕及挂断，再检查固定角色链接、同码两设备忙碌提示、模型离线/恢复与维护排空。
 
-当前临时服务器为 2 核 4 GiB，与 PHP 共用；换机器时重新检查可用资源。3–5 人容量需在目标服务器逐步实测，本地真实 LiveKit/echo 测试不能替代公网媒体及实际模型的验收。此目录是已制作的部署交付物，不代表已安装到公网服务器。
+当前临时服务器为 2 核 4 GiB，与 PHP 共用；换机器时重新检查可用资源。3–5 人容量需在目标服务器逐步实测，本地真实 LiveKit/echo 测试不能替代公网媒体及实际模型的验收。此处通用安装器没有用于当前 HK；当前实例的验证范围见上方状态链接。
 
 如果公网 IP 不在服务器网卡上而是供应商 NAT 映射，必须验证同机 Agent 到 LiveKit 的音频链路；健康接口成功不代表 NAT 回环可用。若该链路失败，再针对固定 LiveKit 版本验证内部候选地址配置（如 `advertise_internal_ip`）并排除 Tailscale 媒体候选，不盲目改成仅广播 Tailscale 地址。
 
@@ -122,4 +126,4 @@ sudo -u ptoy /usr/bin/node --env-file=/etc/ptoy/app.env node_modules/tsx/dist/cl
 node --test deploy/cloud/configure.test.mjs deploy/cloud/release.test.mjs
 ```
 
-目标服务器的原生依赖由 `release.sh` 再做真实预检。Web 入口模板尚未在公网服务器加载；应用前按所选 Caddy 或 LiteSpeed 的说明完成配置校验，再做真实 HTTPS、WebSocket 和音频验收。
+目标服务器的原生依赖由 `release.sh` 再做真实预检。首次接入新服务器时仍需按所选 Caddy 或 LiteSpeed 的说明完成配置校验，再做真实 HTTPS、WebSocket 和音频验收；当前 HK 的 OpenLiteSpeed 模板已加载验证。

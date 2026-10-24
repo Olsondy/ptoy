@@ -198,6 +198,24 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 9. 运维注意
 
+应用配置按环境保存在 `apps/agent/.env`、`apps/agent/.env.hk` 等文件中；`pnpm app --env hk` 及 Agent/Token 启动命令的 `--env hk` 只加载 `.env.hk`，不叠加或回退到本地 `.env`，进程环境变量仍可显式覆盖配置。省略 `--env` 保持原本地启动方式。当前 HK 配置通过 Tailscale 调用 Windows ASR（`http://100.90.8.73:8001`），LLM 与 TTS 使用 OpenRouter；生产 LiveKit 使用 `LIVEKIT_CONFIG` 指定的配置文件，不能用开发模式启动。真实环境文件不提交，本地 `.env` 保持不变。HK 已上线，当前操作入口为 [HK 部署说明](../../deploy/cloud/hk/README.md)，不使用旧安装器的 `/etc/ptoy/app.env`。
+
+HK 主机 `38.55.199.239` 的基础服务采用独立安装：Tailscale 来自官方 Ubuntu Jammy 稳定源，节点名 `ptoy-hk`，不接管系统 DNS；LiveKit 固定为 `1.13.10`，官方发布包经 SHA-256 校验后安装到 `/usr/local/bin/livekit-server`，由专用 `livekit` 用户及 `livekit-server.service` 运行，配置在 `/etc/livekit/livekit.yaml`，API 凭据与 `.env.hk` 一致。本机信令 `127.0.0.1:7880`，媒体 TCP 7881 / UDP 7882，公网候选地址 `38.55.199.239`，不启用 TURN。保留现有 LiteSpeed、PHP、MariaDB；TLS 反代复用现有 OpenLiteSpeed。此独立服务与原安装器的 `ptoy-livekit.service` 不能同时启动，后续部署应复用已安装服务或显式迁移。
+
+HK 应用部署使用独立 Git 克隆 `/opt/ptoy/source`（GitHub `Olsondy/ptoy`），Node `22.23.4`、pnpm `10.18.0`；当前工作区尚未提交的环境启动改动单独同步，不伪装成已提交版本。`ptoy-token.service` / `ptoy-agent.service` 由专用 `ptoy` 用户运行，调用 `scripts/run-agent.mjs` 的 `--env hk` 入口，读取源码目录中的 `apps/agent/.env.hk`（`root:ptoy`、`0640`）。数据库和角色资源位于 `/var/lib/ptoy`，前端构建产物单独复制至 `/var/www/ptoy/current`。域名确定为 `voice.bocayouth.cn` 与 `rtc.bocayouth.cn`；Cloudflare 代理 HTTPS 到现有 OpenLiteSpeed 的两个新增虚拟主机，复用覆盖这两个子域名的现有 Cloudflare Origin 证书。HK 单元模板见 `deploy/cloud/hk/`，与旧版 `deploy/cloud/install.sh` 的布局不同，不能混用。
+
+2026-10-25 应用上线验证（Git 基线 `ece1377c114a5164d65ef8e9da1d4f1a4d9fd08c`，另含本次未提交改动）：
+
+- Linux 上冻结锁文件安装、4 项环境启动测试、workspace 类型检查、前端构建和原生 VAD 推理均通过。两个应用服务已启用开机启动；维护模式已关闭，模型就绪。
+- 两个域名公网 HTTPS 返回 200、证书验证通过；Chrome 已完成邀请码登录。未登录角色 API 返回 401，公网 `/internal/ops/status` 与 `/.env` 返回 403。
+- 服务器端模拟客户端经正式 HTTPS/WSS 域名完成邀请码、拨号、真实 Windows ASR、OpenRouter LLM/TTS、音频及字幕、挂断释放：收到 353 帧非静音音频、20 字字幕；单轮日志 ASR 推理 95ms、请求 500ms、LLM 首 token 887ms、TTS 首段 1586ms、停止说话至回复首音 3817ms。这是单次功能验证，不是容量或稳定延迟基准。
+- Windows 原生测试客户端的公网 Node fetch 受本机网络/代理路径影响超时；浏览器正常访问并登录。补充测试用临时 SSH 隧道承载 API/信令，媒体仍走 LiveKit 的公网 ICE 候选，完成真实跨机音频往返及 27 字字幕（538 帧非静音音频），随后释放通话。隧道已关闭，正式应用不依赖隧道。未代替真人浏览器麦克风、手机流量或多人容量验收。
+- OpenLiteSpeed 增加 `ptoy_voice` / `ptoy_rtc` 两个虚拟主机并优雅重载；旧 HTTPS 监听及站点保留，`smartercable.com` 仍为 200，`stock.bocayouth.cn` 仍为既有 503。原主配置备份为 `/var/backups/ptoy/ols-httpd-before-hk-20261025.conf`。RTC 模板补齐 `docRoot` 后校验无 ERROR/FATAL；该主机原配置的 `lshttpd -t` 也会以警告和退出码 1 结束，不能只按退出码判断。
+
+2026-10-25 基础服务安装阶段验证：Tailscale `1.104.2` 与 LiveKit `1.13.10` 已安装且 systemd 服务开机自启；LiveKit 本机根路径及签名鉴权的 `RoomService/ListRooms` 均返回 200。LiteSpeed / MariaDB 原进程未重启，`smartercable.com` 返回 200；原 `stock.bocayouth.cn` 仍为安装前已有的 503。Tailscale 已授权，服务器地址 `100.88.227.106`；服务器访问 Windows `http://100.90.8.73:8001/health` 连续三次返回 200，请求总耗时分别为 1.251 / 0.934 / 0.939 秒（新建 HTTP 连接）。当次链路经洛杉矶 DERP（`relay "lax"`），Tailscale ping 约 309–612ms，未建立直连；这是网络及健康接口测量，不是 ASR 推理或完整通话延迟。LiveKit 和原 PHP 站点复查均返回 200。
+
+同日直连复查：日志显示先建立 `lax` DERP 连接，约 15 秒后已发现 Windows 公网 UDP 端点并切换直连；两端 `tailscale status` 均确认 `direct`，连续 5 次 ping 为 37–38ms，5 次 ASR 健康请求全部 200，总耗时 0.1136–0.1165 秒。服务器 UDP 可用且 41641 已放行，无需改防火墙。本机启用 `singbox_tun`，本地 CLI `netcheck` 看到代理公网出口、最近 DERP 为 `lax`；本机实际 home relay 也是 `lax`，服务器 home relay 是 `hkg`，因此初始协商阶段会绕行洛杉矶。本次未修改代理或路由配置；中继选择受代理影响的判断来自这些观测，未用停用代理的对照实验验证。初次检查的中继状态不能视为持续无法直连。
+
 邀请访问控制已在正式网页、Token API 和 Agent 中实现并完成本地验证，见 [ADR 0010](../decisions/0010-invite-only-access.md)。支持按人发放可重复使用的邀请码、固定 30 天的浏览器会话，以及每码最多一通拨号或通话。独立交互原型仅供演示，不代表正式服务状态；云端部署与公网媒体、容量验收见[独立云部署方案](cloud-local-models.md)。
 
 Token 服务以本机持久化 SQLite 管理邀请、浏览器会话和通话占用。网页与 API 同源，非本机回环访问要求 HTTPS 与 Secure Cookie。Agent 在双方媒体就绪后、启动通话 pipeline 前完成服务端原子准入：撤销先完成则阻止准入，准入先完成则允许既有通话结束。旧 LiveKit 凭证可能进入空房间，但不能绕过准入启动模型。短暂重连和结束清理期间保留占用；结束事件与服务端对账共同回收，状态不明时暂时拒绝新拨号。本地合成角色与 LiveKit/echo 验证已覆盖重连、API/Agent 重启、准入响应丢失和慢清理；真实公网媒体与实际模型容量仍须按部署环境验收。
