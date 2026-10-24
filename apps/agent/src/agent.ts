@@ -48,5 +48,7 @@ export default defineAgent({
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // `dev` defaults to debug, which buries the call's own lines under LiveKit's; LOG_LEVEL=debug restores it.
+  process.env.LOG_LEVEL ||= 'info';
   cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url) }));
 }
