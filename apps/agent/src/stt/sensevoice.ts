@@ -95,6 +95,10 @@ export interface SenseVoiceSTTOptions {
    * end-of-turn model uses it to pick its per-language threshold.
    */
   readonly language?: string;
+  /** Bearer token for a hosted OpenAI-compatible ASR (OpenRouter); SenseVoice needs none. */
+  readonly apiKey?: string;
+  /** `model` form field for a hosted ASR, e.g. `qwen/qwen3-asr-1.7b`; SenseVoice needs none. */
+  readonly model?: string;
   /** Called for every non-empty recognized utterance (text + emotion + events). */
   readonly onTranscript?: (transcript: AsrTranscript) => void;
   /**
@@ -200,6 +204,8 @@ async function readErrorBody(res: Response): Promise<{ code?: string; message?: 
 /**
  * Non-streaming STT backed by a SenseVoice ASR service with an OpenAI-compatible
  * `POST /v1/audio/transcriptions` (multipart `file`, `response_format=json` → `{ text, raw_text, elapsed_seconds }`).
+ * With `apiKey` + `model` the same request goes to a hosted endpoint (OpenRouter, `ASR_URL=https://openrouter.ai/api`),
+ * which answers `{ text }`: no emotion/event tags (emotion `unknown`), no inference time.
  *
  * It recognizes one whole utterance per call, so `AgentSession` wraps it in `stt.StreamAdapter`
  * with the session's VAD: the VAD cuts utterances, each one becomes one FINAL_TRANSCRIPT.
@@ -221,7 +227,7 @@ export class SenseVoiceSTT extends stt.STT {
   }
 
   override get model(): string {
-    return 'SenseVoiceSmall';
+    return this.#opts.model ?? 'SenseVoiceSmall';
   }
 
   override get provider(): string {
@@ -279,7 +285,9 @@ export class SenseVoiceSTT extends stt.STT {
       form.append('file', new Blob([toWav(pcm)], { type: 'audio/wav' }), 'utterance.wav');
       form.append('response_format', 'json');
       form.append('language', this.#opts.language ?? 'zh');
-      res = await this.#fetch(this.#endpoint, { method: 'POST', body: form, signal });
+      if (this.#opts.model !== undefined) form.append('model', this.#opts.model);
+      const headers = this.#opts.apiKey === undefined ? undefined : { Authorization: `Bearer ${this.#opts.apiKey}` };
+      res = await this.#fetch(this.#endpoint, { method: 'POST', body: form, headers, signal });
     } catch (error) {
       if (timeout.aborted) {
         throw new AsrError('timeout', `ASR did not respond within ${this.#opts.timeoutMs}ms`, { cause: error });

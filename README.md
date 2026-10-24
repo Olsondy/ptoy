@@ -2,9 +2,11 @@
 
 实时语音通话： AI 角色打电话聊天。
 
-- 语音识别：SenseVoice
+- 语音识别：SenseVoice（可选 OpenRouter）
 - 对话：Qwen3-8B（llama.cpp，可选 OpenRouter）
 - 语音合成：IndexTTS2（可选 OpenRouter）
+
+三个模型也可以全部改用 OpenRouter，不需要本地 GPU（ADR 0012）。
 
 音频经 LiveKit（WebRTC）在浏览器和 Agent 之间传输。
 

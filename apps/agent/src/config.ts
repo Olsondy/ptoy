@@ -91,6 +91,9 @@ const callSchema = z.object({
   ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
   ASR_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   ASR_LANGUAGE: z.string().min(2).default('zh'),
+  // Hosted OpenAI-compatible ASR (OpenRouter): bearer key and `model` form field. Unset for SenseVoice.
+  ASR_API_KEY: z.string().min(1).optional(),
+  ASR_MODEL: z.string().min(1).optional(),
   TURN_DETECTOR: z.enum(['vad', 'eot', 'transcript']).default('transcript'),
   VAD_MIN_SILENCE_MS: z.coerce.number().int().positive().default(550),
   ENDPOINTING_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(800),
@@ -103,6 +106,10 @@ export interface CallConfig {
   readonly asrUrl: string;
   readonly asrTimeoutMs: number;
   readonly asrLanguage: string;
+  /** Sent as a bearer token when set (hosted ASR); SenseVoice needs none. */
+  readonly asrApiKey?: string;
+  /** Sent as the `model` form field when set (hosted ASR); SenseVoice needs none. */
+  readonly asrModel?: string;
   /**
    * `vad`: VAD silence ends the turn; `transcript`: like `vad`, but a transcript that stops
    * mid-sentence ("然后", "我觉得", "，") waits `endpointingMaxDelayMs`; `eot`: LiveKit's local audio
@@ -129,6 +136,8 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
     asrUrl: e.ASR_URL,
     asrTimeoutMs: e.ASR_TIMEOUT_MS,
     asrLanguage: e.ASR_LANGUAGE,
+    ...(e.ASR_API_KEY !== undefined && { asrApiKey: e.ASR_API_KEY }),
+    ...(e.ASR_MODEL !== undefined && { asrModel: e.ASR_MODEL }),
     turnDetector: e.TURN_DETECTOR,
     vadMinSilenceMs: e.VAD_MIN_SILENCE_MS,
     endpointingMinDelayMs: e.ENDPOINTING_MIN_DELAY_MS,

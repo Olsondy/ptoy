@@ -9,6 +9,7 @@ interface Captured {
   method: string;
   url: string;
   contentType: string | undefined;
+  authorization: string | undefined;
   body: Buffer;
 }
 
@@ -33,6 +34,7 @@ beforeEach(async () => {
         method: req.method ?? '',
         url: req.url ?? '',
         contentType: req.headers['content-type'],
+        authorization: req.headers.authorization,
         body: Buffer.concat(chunks),
       };
       requests.push(captured);
@@ -105,6 +107,23 @@ describe('SenseVoiceSTT request', () => {
   it('keeps a base URL path prefix', async () => {
     await makeStt({ baseUrl: `${baseUrl}/asr` }).recognize(toneFrame());
     expect(requests[0]!.url).toBe('/asr/v1/audio/transcriptions');
+  });
+
+  it('sends no key or model to SenseVoice; a hosted ASR gets both and may answer with plain `{ text }`', async () => {
+    await makeStt().recognize(toneFrame());
+    expect(requests[0]!.authorization).toBeUndefined();
+    expect((await sentForm(requests[0]!)).form.get('model')).toBeNull();
+
+    handler = (_req, res) => json(res, 200, { text: '你好呀', usage: { cost: 0.00001 } });
+    const hosted = makeStt({ baseUrl: `${baseUrl}/api`, apiKey: 'sk-or-test', model: 'qwen/qwen3-asr-1.7b' });
+    const event = await hosted.recognize(toneFrame());
+    const req = requests[1]!;
+    expect(req.url).toBe('/api/v1/audio/transcriptions');
+    expect(req.authorization).toBe('Bearer sk-or-test');
+    expect((await sentForm(req)).form.get('model')).toBe('qwen/qwen3-asr-1.7b');
+    expect(event.alternatives?.[0]?.text).toBe('你好呀');
+    expect(asrMetadataOf(event)).toMatchObject({ emotion: 'unknown', events: [] });
+    expect(hosted.model).toBe('qwen/qwen3-asr-1.7b');
   });
 
   it('downmixes stereo input to mono', async () => {

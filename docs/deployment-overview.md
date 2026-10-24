@@ -113,9 +113,12 @@ TTS_EMOTION_CONTROL=vector
 TTS_EMO_WEIGHT=0.6
 ```
 
-不用本地 GPU 时，LLM 和 TTS 都可改用 OpenRouter（TTS 为 Fish），只需本机运行 SenseVoice：
+全部模型改用 OpenRouter 时（ADR 0012），不需要启动任何模型服务，第二层可以跳过：
 
 ```ini
+ASR_URL=https://openrouter.ai/api
+ASR_API_KEY=sk-or-...
+ASR_MODEL=qwen/qwen3-asr-1.7b
 LLM_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=sk-or-...
 LLM_MODEL=cognitivecomputations/dolphin-mistral-24b-venice-edition
@@ -131,7 +134,8 @@ FILLERS_ENABLED=false
 - 页面只列出 `tts_backends` 包含当前 `TTS_BACKEND` 的角色。内置角色缺省只用于 IndexTTS，Fish 模式下只有 `rouyi`；其他角色要在角色文件里加 `openrouter` 并在 `TTS_OPENROUTER_VOICES` 映射音色，`DEFAULT_CHARACTER` 也必须是可用角色，否则启动报错。
 - `TTS_OPENROUTER_VOICES` 把角色文件的 `voice:` 映射为 Fish 音色 id，未映射的用模型默认音色。预录语气词是 IndexTTS 音色，要关闭或用 Fish 音色重新生成。
 - 该后端不支持情绪强度，非平静情绪以 `[开心]` 式提示词传给模型，角色的 `tts_style` 加在每句最前面。`LLM_SHARED_RULES=false` 不拼 `_rules.md`，只适合人设自带说话规则的角色（如 `rouyi`）。
-- `CLOUD_MODEL_CHECKS` 不探测 OpenRouter 上的 LLM 和 TTS。
+- 托管 ASR 不返回 SenseVoice 的情绪标签，来电者语气不可用。也可以只把 LLM/TTS 换成 OpenRouter，ASR 保留 SenseVoice。
+- `CLOUD_MODEL_CHECKS` 不探测 OpenRouter 上的 ASR、LLM 和 TTS。
 
 把 `LIVEKIT_SERVER_BIN` 改为实际安装路径。`devkey/secret` 对应本地 `livekit-server --dev`，已有独立 LiveKit 时使用与其一致的连接配置。注释独占一行，不放在值后面。完整可选项见 [环境变量示例](../apps/agent/.env.example)。
 
