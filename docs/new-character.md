@@ -68,7 +68,7 @@ tts_max_pause_ms: 300
 ```
 
 - `name`、`voice` 必填，人设不能为空；front matter 只支持一行一个 `key: value`。
-- `tts_speed`：0.8–1.3，缺省 1.0；`tts_max_pause_ms`：100–1000，缺省用 TTS 服务的设置（400）。
+- `tts_speed`：0.8–1.5，缺省 1.0；`tts_max_pause_ms`：100–1000，缺省用 TTS 服务的设置（400）。
 - 情绪标签、字数等通话规则在 `_rules.md`，会自动拼在人设后面，人设里不用写。
 - 改人设后可以用 `pnpm --filter @ptoy/agent chat -- --character <角色id>` 打字试聊（发给 LLM 的内容和通话一致），`emotion:compliance` 复测情绪标签遵守率（ADR 0007）。
 

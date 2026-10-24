@@ -24,7 +24,7 @@ describe('parseCharacterFile', () => {
       speed: 1.06,
       maxPauseMs: 300,
     });
-    for (const bad of ['tts_speed: 快', 'tts_speed: 2', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5']) {
+    for (const bad of ['tts_speed: 快', 'tts_speed: 1.6', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5']) {
       expect(() => parseCharacterFile('x', file(bad), 'R'), bad).toThrow(new RegExp(`"x".*${bad.split(':')[0]}`));
     }
   });
