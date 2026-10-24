@@ -198,11 +198,16 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 9. 运维注意
 
+邀请访问控制已在正式网页、Token API 和 Agent 中实现并完成本地验证，见 [ADR 0010](../decisions/0010-invite-only-access.md)。支持按人发放可重复使用的邀请码、固定 30 天的浏览器会话，以及每码最多一通拨号或通话。独立交互原型仅供演示，不代表正式服务状态；云端部署与公网媒体、容量验收见[独立云部署方案](cloud-local-models.md)。
+
+Token 服务以本机持久化 SQLite 管理邀请、浏览器会话和通话占用。网页与 API 同源，非本机回环访问要求 HTTPS 与 Secure Cookie。Agent 在双方媒体就绪后、启动通话 pipeline 前完成服务端原子准入：撤销先完成则阻止准入，准入先完成则允许既有通话结束。旧 LiveKit 凭证可能进入空房间，但不能绕过准入启动模型。短暂重连和结束清理期间保留占用；结束事件与服务端对账共同回收，状态不明时暂时拒绝新拨号。本地合成角色与 LiveKit/echo 验证已覆盖重连、API/Agent 重启、准入响应丢失和慢清理；真实公网媒体与实际模型容量仍须按部署环境验收。
+
 应用（LiveKit、token 服务、Agent、网页）用仓库根目录的 `pnpm app` 一条命令启动，见 `README.md`。模型服务由用户自行维护，应用只通过 `apps/agent/.env` 里配置的地址连接它们。
 
 - Windows 主机建议接网线，并关闭睡眠和 Wi-Fi 节能。实测 Wi-Fi 下 ping 在 30–375ms 之间波动，还出现过丢包
 - 防火墙需要放行入站端口：LiveKit TCP 7880、7881 和 UDP 7882，网页 4173；Mac 开发期另需 7860（WebUI）或 8002（TTS FastAPI）、8080、8001（ASR）
 - 浏览器麦克风只在 localhost 或 HTTPS 下可用；从手机等其他设备访问时，需要给网页和 LiveKit 信令都加上 TLS。现有 Tailscale 操作步骤见根目录 `README.md`。
+- `apps/agent/.env` 中的 `APP_ORIGIN` 必须与浏览器实际访问网页的协议、域名和端口一致，不包含路径；它不一定等于 Tailscale 域名或 `LIVEKIT_PUBLIC_URL`。不匹配时邀请码等写请求返回 `403 invalid_origin`。修改后由操作者重新启动应用，使配置生效。
 
 ## 10. 待定事项
 

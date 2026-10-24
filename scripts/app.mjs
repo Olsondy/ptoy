@@ -68,40 +68,51 @@ function readable(line) {
   }
 }
 
-function start(name, command, args, extraEnv = {}) {
+function start(name, command, args, extraEnv = {}, stopOnExit = true) {
   const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...extraEnv },
     shell: isWindows,
+    windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const prefix = `[${name}]`.padEnd(10);
   const forward = (stream, out) => {
     let buffered = '';
+    stream.setEncoding('utf8');
     stream.on('data', (chunk) => {
-      buffered += chunk.toString();
+      buffered += chunk;
       const lines = buffered.split(/\r?\n/);
       buffered = lines.pop() ?? '';
       for (const line of lines) out.write(`${prefix}${readable(line)}\n`);
+    });
+    stream.on('end', () => {
+      if (buffered) out.write(`${prefix}${readable(buffered)}\n`);
     });
   };
   forward(child.stdout, process.stdout);
   forward(child.stderr, process.stderr);
   child.on('exit', (code) => {
-    if (!stopping) {
+    if (stopOnExit && !stopping) {
       log(`${prefix}已退出 (code ${code})，正在停止其余进程`);
       stopAll(1);
     }
   });
+  child.on('error', (error) => {
+    log(`${prefix}启动失败：${error.message}`);
+    stopAll(1);
+  });
   children.push(child);
+  return child;
 }
 
 function stopAll(exitCode = 0) {
   if (stopping) return;
   stopping = true;
+  restoreInput();
   for (const child of children) {
-    if (child.exitCode !== null) continue;
-    if (isWindows) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) continue;
+    if (isWindows) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     else child.kill('SIGTERM');
   }
   setTimeout(() => process.exit(exitCode), 500);
@@ -110,7 +121,27 @@ function stopAll(exitCode = 0) {
 process.on('SIGINT', () => stopAll(0));
 process.on('SIGTERM', () => stopAll(0));
 
-if (await portOpen(livekitPort, livekitUrl.hostname)) {
+// Consume Ctrl+C as input so the outer `pnpm app` batch shell also avoids its
+// "Terminate batch job (Y/N)?" prompt. Non-interactive runs still use SIGINT.
+const rawInput = isWindows && process.stdin.isTTY && !process.stdin.isRaw;
+function restoreInput() {
+  if (rawInput) {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+}
+if (rawInput) {
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on('data', (data) => {
+    if (data.includes(3)) stopAll(0);
+  });
+  process.once('exit', restoreInput);
+}
+
+const livekitRunning = await portOpen(livekitPort, livekitUrl.hostname);
+if (stopping) process.exit(0);
+if (livekitRunning) {
   log(`✓ LiveKit  已在 :${livekitPort} 运行，跳过启动`);
 } else {
   const bin = (env.LIVEKIT_SERVER_BIN ?? '').trim().replace(/^["']|["']$/g, '');
@@ -121,13 +152,21 @@ if (await portOpen(livekitPort, livekitUrl.hostname)) {
 }
 
 log('构建网页…');
-const build = spawnSync('pnpm', ['--filter', '@ptoy/web', 'build'], { cwd: root, stdio: 'inherit', shell: isWindows });
-if (build.status !== 0) fail('网页构建失败');
-
-start('token', 'pnpm', ['--filter', '@ptoy/agent', 'start:token']);
-start('agent', 'pnpm', ['--filter', '@ptoy/agent', 'start']);
-start('web', 'pnpm', ['--filter', '@ptoy/web', 'preview', '--port', String(webPort), '--strictPort'], {
-  TOKEN_SERVER_URL: `http://127.0.0.1:${tokenPort}`,
+const build = start('build', 'pnpm', ['--filter', '@ptoy/web', 'build'], {}, false);
+const buildCode = await new Promise((resolve) => {
+  build.once('close', resolve);
 });
+if (stopping || buildCode !== 0) {
+  if (!stopping) {
+    log('网页构建失败');
+    stopAll(1);
+  }
+} else {
+  start('token', 'pnpm', ['--filter', '@ptoy/agent', 'start:token']);
+  start('agent', 'pnpm', ['--filter', '@ptoy/agent', 'start']);
+  start('web', 'pnpm', ['--filter', '@ptoy/web', 'preview', '--port', String(webPort), '--strictPort'], {
+    TOKEN_SERVER_URL: `http://127.0.0.1:${tokenPort}`,
+  });
 
-log(`\n打开 http://localhost:${webPort} 开始通话（Ctrl+C 停止）\n`);
+  log(`\n打开 http://localhost:${webPort} 开始通话（Ctrl+C 停止）\n`);
+}
