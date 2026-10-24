@@ -1,0 +1,28 @@
+diff --git a/dist/ipc/supervised_proc.cjs b/dist/ipc/supervised_proc.cjs
+index 19c22b07c95cc243809d07739363efee804c8048..c78225cdb8cba3a43e28bc55bfba5ec33b4806f1 100644
+--- a/dist/ipc/supervised_proc.cjs
++++ b/dist/ipc/supervised_proc.cjs
+@@ -296,7 +296,8 @@ class SupervisedProc {
+   async getChildMemoryUsageMB() {
+     var _a;
+     const pid = (_a = this.proc) == null ? void 0 : _a.pid;
+-    if (!pid) {
++    // ptoy patch: pidusage polls `wmic` for every child at once, which fails on Windows every 5s.
++    if (!pid || process.platform === "win32") {
+       return 0;
+     }
+     try {
+diff --git a/dist/ipc/supervised_proc.js b/dist/ipc/supervised_proc.js
+index ae1ffaf99d1a23f12f6e9a01d15e5cbe6b151e0e..39fa884ed42359208d35ed3d07c46ef7b111e003 100644
+--- a/dist/ipc/supervised_proc.js
++++ b/dist/ipc/supervised_proc.js
+@@ -263,7 +263,8 @@ class SupervisedProc {
+   async getChildMemoryUsageMB() {
+     var _a;
+     const pid = (_a = this.proc) == null ? void 0 : _a.pid;
+-    if (!pid) {
++    // ptoy patch: pidusage polls `wmic` for every child at once, which fails on Windows every 5s.
++    if (!pid || process.platform === "win32") {
+       return 0;
+     }
+     try {

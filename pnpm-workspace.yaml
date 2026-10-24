@@ -2,3 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
   - "tests/*"
+
+# Windows: skip LiveKit's per-child wmic memory polling, it warns every 5s.
+patchedDependencies:
+  '@livekit/agents@1.9.3': patches/@livekit__agents@1.9.3.patch

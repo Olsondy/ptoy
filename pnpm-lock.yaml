@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@livekit/agents@1.9.3':
+    hash: d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442
+    path: patches/@livekit__agents@1.9.3.patch
+
 importers:
 
   .:
@@ -19,10 +24,10 @@ importers:
     dependencies:
       '@livekit/agents':
         specifier: ^1.9.3
-        version: 1.9.3(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)
+        version: 1.9.3(patch_hash=d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442)(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)
       '@livekit/agents-plugin-openai':
         specifier: 1.9.3
-        version: 1.9.3(@livekit/agents@1.9.3(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7))(@livekit/rtc-node@1.2.1)(zod@4.6.7)
+        version: 1.9.3(@livekit/agents@1.9.3(patch_hash=d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442)(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7))(@livekit/rtc-node@1.2.1)(zod@4.6.7)
       '@livekit/rtc-node':
         specifier: ^1.2.1
         version: 1.2.1
@@ -4303,9 +4308,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@livekit/agents-plugin-openai@1.9.3(@livekit/agents@1.9.3(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7))(@livekit/rtc-node@1.2.1)(zod@4.6.7)':
+  '@livekit/agents-plugin-openai@1.9.3(@livekit/agents@1.9.3(patch_hash=d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442)(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7))(@livekit/rtc-node@1.2.1)(zod@4.6.7)':
     dependencies:
-      '@livekit/agents': 1.9.3(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)
+      '@livekit/agents': 1.9.3(patch_hash=d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442)(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)
       '@livekit/rtc-node': 1.2.1
       openai: 6.49.0(ws@8.22.0)(zod@4.6.7)
       ws: 8.22.0
@@ -4317,7 +4322,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@livekit/agents@1.9.3(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)':
+  '@livekit/agents@1.9.3(patch_hash=d62aeab7694f8a83bd3a713ac2d9ddf905f6c780d79423404336eda031c00442)(@livekit/rtc-node@1.2.1)(@types/node@22.20.5)(typescript@7.0.2)(zod@4.6.7)':
     dependencies:
       '@bufbuild/protobuf': 1.10.1
       '@livekit/av': 10.1.0
