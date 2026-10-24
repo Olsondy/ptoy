@@ -126,6 +126,18 @@ if (build.status !== 0) fail('网页构建失败');
 
 start('token', 'pnpm', ['--filter', '@ptoy/agent', 'start:token']);
 start('agent', 'pnpm', ['--filter', '@ptoy/agent', 'start']);
+
+// The web proxy forwards /api to the token server; start it once that answers, so an open page doesn't get ECONNREFUSED.
+const tokenDeadline = Date.now() + 30_000;
+while (!(await portOpen(tokenPort))) {
+  if (stopping) await new Promise(() => {});
+  if (Date.now() > tokenDeadline) {
+    log(`✗ token 服务 30 秒内没有在 :${tokenPort} 监听，正在停止`);
+    stopAll(1);
+    await new Promise(() => {});
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
 start('web', 'pnpm', ['--filter', '@ptoy/web', 'preview', '--port', String(webPort), '--strictPort'], {
   TOKEN_SERVER_URL: `http://127.0.0.1:${tokenPort}`,
 });

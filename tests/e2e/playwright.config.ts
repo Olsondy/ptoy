@@ -35,6 +35,8 @@ const livekitEnv = {
   LIVEKIT_API_SECRET: livekitApiSecret,
   CHARACTERS_DIR: fileURLToPath(new URL('./fixtures/characters', import.meta.url)),
   DEFAULT_CHARACTER: 'xiaoyou',
+  // Fixture characters are IndexTTS ones; pin the backend so a local apps/agent/.env can't filter them out.
+  TTS_BACKEND: 'gradio',
   INVITE_DB_PATH: inviteDbPath,
   APP_ORIGIN: `http://localhost:${webPort}`,
   ACCESS_COOKIE_SECURE: 'false',

@@ -5,7 +5,7 @@ import { createServer as createTcpServer } from 'node:net';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { Room, RoomEvent, AudioSource, AudioFrame, LocalAudioTrack, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
@@ -179,7 +179,7 @@ finally {
   store?.close();
   for(const child of children)await kill(child).catch(()=>undefined);
   const cleanupPath=realpathSync(scratch);
-  assert(cleanupPath.startsWith(resolve(tmpdir())+sep)&&basename(cleanupPath).startsWith('ptoy-recovery-'));
+  assert(cleanupPath.startsWith(realpathSync(tmpdir())+sep)&&basename(cleanupPath).startsWith('ptoy-recovery-'));
   rmSync(cleanupPath,{recursive:true,force:true});
 }
 // rtc-node keeps its native runtime alive after Room cleanup (same as sim-call).
