@@ -20,11 +20,13 @@ describe('parseCharacterFile', () => {
 
   it('reads the optional TTS tuning and rejects values out of range', () => {
     const file = (extra: string) => `---\nname: 小悠\nvoice: v\n${extra}\n---\n你叫小悠。`;
-    expect(parseCharacterFile('a', file('tts_speed: 1.06\ntts_max_pause_ms: 300'), 'R').tts).toEqual({
+    expect(parseCharacterFile('a', file('tts_speed: 1.06\ntts_max_pause_ms: 300\ntts_emo_weight: 0.3'), 'R').tts).toEqual({
       speed: 1.06,
       maxPauseMs: 300,
+      emoWeight: 0.3,
     });
-    for (const bad of ['tts_speed: 快', 'tts_speed: 1.6', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5']) {
+    const bads = ['tts_speed: 快', 'tts_speed: 1.6', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5', 'tts_emo_weight: 2'];
+    for (const bad of bads) {
       expect(() => parseCharacterFile('x', file(bad), 'R'), bad).toThrow(new RegExp(`"x".*${bad.split(':')[0]}`));
     }
   });
@@ -85,6 +87,7 @@ describe('loadCharacters', () => {
     expect(tuning).toEqual({
       xiaoyou: { speed: 1.06, maxPauseMs: 300 },
       zhixia: { speed: 1.12, maxPauseMs: 300 },
+      zhixin: { speed: 1.1, maxPauseMs: 300, emoWeight: 0.3 },
     });
   });
 });

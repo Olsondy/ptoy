@@ -2,17 +2,21 @@
 
 状态：accepted · 2026-10-24
 
-角色文件的 front matter 可以写两个可选字段，和 `voice:` 放在一起：
+角色文件的 front matter 可以写三个可选字段，和 `voice:` 放在一起：
 
 - `tts_speed`：语速倍数，缺省 `1.0`，`1.06` 表示快 6%。
+- `tts_emo_weight`：带情绪标签的句子的情绪强度（`emo_alpha`，0–1），缺省用 Agent 的 `TTS_EMO_WEIGHT`（0.6）。
 - `tts_max_pause_ms`：句中停顿上限，缺省用 TTS 服务的配置（`TTS_MAX_PAUSE_MS`，400）；每段尾部保留的静音取它的 0.6 倍（300 → 180ms），段与段之间的停顿也就不超过这个量级。
 
-Agent 每次 `POST /tts` 把这两个值带上（`speed`、`max_pause_ms`），TTS 服务按请求生效，所以调参后下一通电话就能听到，不用重启服务。当前取值：
+Agent 每次 `POST /tts` 把这些值带上（`speed`、`max_pause_ms`、`emo_alpha`），TTS 服务按请求生效，所以调参后下一通电话就能听到，不用重启服务。当前取值：
 
-| 角色 | voice | tts_speed | tts_max_pause_ms |
-|---|---|---|---|
-| 小悠 | xiaoyou-default | 1.06 | 300 |
-| 知夏 | zhixia | 1.12 | 300 |
+| 角色 | voice | tts_speed | tts_max_pause_ms | tts_emo_weight |
+|---|---|---|---|---|
+| 小悠 | xiaoyou-default | 1.06 | 300 | （0.6） |
+| 知夏 | zhixia | 1.12 | 300 | （0.6） |
+| 知心哥哥 | zhixin | 1.1 | 300 | 0.3 |
+
+`tts_emo_weight` 是知心哥哥加上的：他的参考音频本身就是关心、偏心疼的语气，0.6 时“哀”像要哭（2026-10-24 试听 0.6 / 0.5 / 0.4 / 0.3，喜和哀都选 0.3；0.3 时 SenseVoice 仍判出 SAD，喜的识别本来就弱）。
 
 原因：语速和停顿因说话人而异（两段参考音频分别要快 6% 和 12%），全局一个值调不好两个角色。角色文件已经是声明音色的地方（ADR 0008），调校值跟音色写在一起、进仓库可审查。试听依据见 2026-10-24 的对比（真实 LLM 回复，FastAPI；快 6% / 12% 当时用 ffmpeg `atempo` 模拟）。
 
