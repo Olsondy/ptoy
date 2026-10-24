@@ -35,7 +35,7 @@
  */
 import { AudioFrame, AudioSource, AudioStream, LocalAudioTrack, Room, RoomEvent, TrackKind, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
 import type { RemoteParticipant, RemoteTrack } from '@livekit/rtc-node';
-import { AccessToken } from 'livekit-server-sdk';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { type AddressInfo, createServer } from 'node:net';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -53,6 +53,10 @@ import { decodeWav, encodeWav } from '../src/tts/wav.js';
 import { ASR_EMOTION_TONE, withTone } from '../src/emotion/user-tone.js';
 import type { AsrEmotion } from '../src/stt/sensevoice.js';
 import { EMOTIONS, type Emotion } from '@ptoy/segmenter';
+import { loadTokenServerConfig } from '../src/config.js';
+import { createTokenServer, mintCallToken } from '../src/token-server.js';
+import { AccessStore } from '../src/access/store.js';
+import { AccessController, livekitGateway } from '../src/access/controller.js';
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -157,6 +161,20 @@ async function main(): Promise<number> {
   }
   const livekitUrl = env.LIVEKIT_URL ?? 'ws://localhost:7880';
 
+  // Exercise the same admission boundary as browser calls, using an isolated ephemeral invite.
+  env.INVITE_DB_PATH = ':memory:';
+  env.APP_ORIGIN = 'http://localhost';
+  env.ACCESS_COOKIE_SECURE = 'false';
+  env.ACCESS_INTERNAL_SECRET = randomBytes(32).toString('hex');
+  env.LIVEKIT_PUBLIC_URL = livekitUrl;
+  const tokenConfig = loadTokenServerConfig(env);
+  const accessStore = new AccessStore(':memory:');
+  const accessServer = createTokenServer(tokenConfig, undefined, new AccessController(accessStore, tokenConfig.access,
+    livekitGateway(livekitUrl, tokenConfig.livekitApiKey, tokenConfig.livekitApiSecret)));
+  await new Promise<void>(resolve => accessServer.listen(0, '127.0.0.1', resolve));
+  env.ACCESS_INTERNAL_URL = `http://127.0.0.1:${(accessServer.address() as AddressInfo).port}`;
+  cleanups.push(async () => { await new Promise<void>(resolve => accessServer.close(() => resolve())); accessStore.close(); });
+
   // ---- agent worker ----
   const timings: Record<string, unknown>[] = [];
   const agentLogs: string[] = [];
@@ -189,12 +207,13 @@ async function main(): Promise<number> {
   ]);
 
   // ---- caller ----
-  const roomName = `sim-${Date.now()}`;
-  const at = new AccessToken(env.LIVEKIT_API_KEY ?? 'devkey', env.LIVEKIT_API_SECRET ?? 'secret', { identity: 'sim-caller' });
-  at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true, canPublishData: true });
+  const invitation = accessStore.createInvite('simulated caller');
+  const simulatedSession = accessStore.session(accessStore.redeem(invitation.code, 'simulation').token);
+  const attempt = accessStore.reserve(simulatedSession, randomUUID(), tokenConfig.characters.defaultId);
+  const callToken = await mintCallToken(tokenConfig, attempt);
   const room = new Room();
   cleanups.push(() => room.disconnect());
-  await room.connect(livekitUrl, await at.toJwt(), { autoSubscribe: true, dynacast: false });
+  await room.connect(livekitUrl, callToken.participantToken, { autoSubscribe: true, dynacast: false });
 
   // Small queue: the default 1 s lets the pump run ahead, so the agent would hear the caller late.
   const source = new AudioSource(SAMPLE_RATE, 1, 100);

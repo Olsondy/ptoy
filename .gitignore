@@ -9,6 +9,7 @@ __pycache__/
 .DS_Store
 .scratch/
 .worktree/
+.data/
 
 # Local Windows deployment config and runtime files
 /deploy/windows/config.ps1

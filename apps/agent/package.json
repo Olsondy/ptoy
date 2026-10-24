@@ -8,6 +8,8 @@
     "start": "tsx --env-file-if-exists=.env src/agent.ts start",
     "dev:token": "tsx watch --env-file-if-exists=.env src/token-server.ts",
     "start:token": "tsx --env-file-if-exists=.env src/token-server.ts",
+    "invite": "tsx --env-file-if-exists=.env src/access/cli.ts",
+    "check:access-recovery": "tsx scripts/check-access-recovery.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "sim:call": "tsx --env-file-if-exists=.env scripts/sim-call.ts",

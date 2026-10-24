@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../access-fixture';
 
 test('主页复制角色链接，固定页刷新、拨号与挂断均保持角色，主页选择不被覆盖', async ({ page, context }, testInfo) => {
   await context.grantPermissions(['microphone', 'clipboard-read', 'clipboard-write']);
@@ -30,12 +30,15 @@ test('主页复制角色链接，固定页刷新、拨号与挂断均保持角�
 
   for (let i = 0; i < 2; i++) {
     const request = page.waitForRequest('**/api/token');
+    const response = page.waitForResponse('**/api/token');
     await page.getByTestId('call-toggle').click();
-    expect((await request).postDataJSON()).toEqual({ characterLink: encoded });
+    expect((await request).postDataJSON()).toEqual({ characterLink: encoded, requestId: expect.any(String) });
+    const { attemptId } = await (await response).json();
     await expect(page.getByTestId('call-status')).toHaveAttribute('data-status', 'connected');
     await page.getByTestId('call-toggle').click();
     await expect(page.getByTestId('call-status')).toHaveAttribute('data-status', 'disconnected');
     await expect(page.getByTestId('character-picker')).toHaveCount(0);
+    await expect.poll(async () => (await (await context.request.get(`/api/calls/${attemptId}`)).json()).state).toBe('ended');
   }
   await page.goto('/');
   await expect(page.getByTestId('character-picker')).toHaveAccessibleName('选择角色：小友');

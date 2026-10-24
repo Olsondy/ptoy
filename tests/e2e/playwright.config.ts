@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 /**
  * Smoke test stack: LiveKit dev server → token server → echo agent → Vite web app.
@@ -20,16 +21,30 @@ const livekitApiSecret = env.LIVEKIT_API_SECRET ?? 'secret';
 const tokenPort = Number(env.E2E_TOKEN_PORT ?? 8730);
 const webPort = Number(env.E2E_WEB_PORT ?? 5730);
 const browserChannel = env.E2E_BROWSER_CHANNEL || undefined;
+const inviteDbPath = env.E2E_INVITE_DB_PATH ?? join(repoRoot, '.scratch', `e2e-invite-${process.pid}.sqlite`);
+env.E2E_INVITE_DB_PATH = inviteDbPath;
+env.ACCESS_INTERNAL_SECRET = 'e2e-internal-secret-only-not-for-production';
 
 const livekitHttpUrl = livekitUrl.replace(/^ws/, 'http');
 const livekitPort = Number(new URL(livekitHttpUrl).port || 7880);
 
 const livekitEnv = {
   LIVEKIT_URL: livekitUrl,
+  LIVEKIT_PUBLIC_URL: livekitUrl,
   LIVEKIT_API_KEY: livekitApiKey,
   LIVEKIT_API_SECRET: livekitApiSecret,
   CHARACTERS_DIR: fileURLToPath(new URL('./fixtures/characters', import.meta.url)),
   DEFAULT_CHARACTER: 'xiaoyou',
+  INVITE_DB_PATH: inviteDbPath,
+  APP_ORIGIN: `http://localhost:${webPort}`,
+  ACCESS_COOKIE_SECURE: 'false',
+  ACCESS_INTERNAL_URL: `http://127.0.0.1:${tokenPort}`,
+  ACCESS_INTERNAL_SECRET: 'e2e-internal-secret-only-not-for-production',
+  CHARACTER_LINK_SECRET: 'e2e-character-secret-only-not-for-production',
+  CLOUD_MODEL_CHECKS: 'false',
+  ACCESS_MAINTENANCE_DEFAULT: 'false',
+  AGENT_HEALTH_HOST: '127.0.0.1',
+  AGENT_HEALTH_PORT: String(env.E2E_AGENT_HEALTH_PORT ?? 8731),
 };
 
 type WebServer = NonNullable<Parameters<typeof defineConfig>[0]['webServer']>;
@@ -76,7 +91,7 @@ servers.push(
     command: 'pnpm --filter @ptoy/agent dev',
     cwd: repoRoot,
     env: { ...livekitEnv, LIVEKIT_AGENT_NAME: '', AGENT_PIPELINE: 'echo' },
-    // The worker has no fixed HTTP port in dev mode; wait for it to register with LiveKit.
+    // Wait for actual worker registration, independently of the test's isolated health port.
     wait: { stdout: /registered worker/i },
     reuseExistingServer: false,
     timeout: 60_000,

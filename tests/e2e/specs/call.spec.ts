@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../access-fixture';
 
 // The echo agent is spawned per call and needs a few seconds to cold-start in dev mode.
 const AGENT_JOIN_TIMEOUT = 20_000;
