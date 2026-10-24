@@ -113,6 +113,26 @@ TTS_EMOTION_CONTROL=vector
 TTS_EMO_WEIGHT=0.6
 ```
 
+不用本地 GPU 时，LLM 和 TTS 都可改用 OpenRouter（TTS 为 Fish），只需本机运行 SenseVoice：
+
+```ini
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=sk-or-...
+LLM_MODEL=cognitivecomputations/dolphin-mistral-24b-venice-edition
+LLM_SHARED_RULES=false
+TTS_BACKEND=openrouter
+TTS_OPENROUTER_API_KEY=sk-or-...
+TTS_OPENROUTER_MODEL=fish-audio/s2.1-pro
+TTS_OPENROUTER_VOICES=rouyi=<fish voice id>
+DEFAULT_CHARACTER=rouyi
+FILLERS_ENABLED=false
+```
+
+- 页面只列出 `tts_backends` 包含当前 `TTS_BACKEND` 的角色。内置角色缺省只用于 IndexTTS，Fish 模式下只有 `rouyi`；其他角色要在角色文件里加 `openrouter` 并在 `TTS_OPENROUTER_VOICES` 映射音色，`DEFAULT_CHARACTER` 也必须是可用角色，否则启动报错。
+- `TTS_OPENROUTER_VOICES` 把角色文件的 `voice:` 映射为 Fish 音色 id，未映射的用模型默认音色。预录语气词是 IndexTTS 音色，要关闭或用 Fish 音色重新生成。
+- 该后端不支持情绪强度，非平静情绪以 `[开心]` 式提示词传给模型，角色的 `tts_style` 加在每句最前面。`LLM_SHARED_RULES=false` 不拼 `_rules.md`，只适合人设自带说话规则的角色（如 `rouyi`）。
+- `CLOUD_MODEL_CHECKS` 不探测 OpenRouter 上的 LLM 和 TTS。
+
 把 `LIVEKIT_SERVER_BIN` 改为实际安装路径。`devkey/secret` 对应本地 `livekit-server --dev`，已有独立 LiveKit 时使用与其一致的连接配置。注释独占一行，不放在值后面。完整可选项见 [环境变量示例](../apps/agent/.env.example)。
 
 连接时容易混淆的几处：
@@ -123,6 +143,7 @@ TTS_EMO_WEIGHT=0.6
 - `TURN_DETECTOR=transcript` 按识别文字判断是否说完：句子完整时静音 `ENDPOINTING_MIN_DELAY_MS` 后回复，结尾像没说完时最多等 `ENDPOINTING_MAX_DELAY_MS`。停顿稍长就被抢答时调大前者（如 1000）。
 - Agent 在 Mac 时，三个模型 URL 的 `127.0.0.1` 换成 Windows 的局域网 IP。`0.0.0.0` 是服务监听地址，不是客户端访问地址。
 - 应用入口 `pnpm app` 读取 `apps/agent/.env`，不读取 `deploy/windows/config.ps1`。本机遗留配置中有旧 GGUF 路径和 ASR 8100 端口，不能混用；本流程使用模型目录启动入口和 ASR 8001。
+- 只测网络链路、不调用模型时设 `AGENT_PIPELINE=echo`，能听到自己的回声。
 
 ### 2 启动应用并接通通话
 
@@ -137,9 +158,59 @@ pnpm app
 
 浏览器通过网页代理获取 token，再加入 LiveKit 房间；Agent 调用 ASR、LLM 和 TTS，音频经 LiveKit 回到浏览器。具体组件与数据流见 [总体架构](architecture/server.md#3-总体架构)，接口实现见 [SenseVoice 适配器](../apps/agent/src/stt/sensevoice.ts)、[LLM 适配器](../apps/agent/src/llm/index.ts)、[TTS API 适配器](../apps/agent/src/tts/fastapi.ts) 和 [Gradio 适配器](../apps/agent/src/tts/gradio.ts)。
 
-从手机或其他电脑访问时，麦克风需要 HTTPS，LiveKit 也要能从浏览器访问。按根目录 [外网访问与 Tailscale](../README.md#外网访问tailscale) 配置；仅把页面地址换成局域网 HTTP 地址不足以启用麦克风。
+从手机或其他电脑访问见下一节。
 
-### 3 验收和定位
+### 3 从其他设备访问
+
+浏览器只在 `localhost` 或 HTTPS 下允许使用麦克风，LiveKit 也要能从浏览器访问；仅把页面地址换成局域网 HTTP 地址不足以启用麦克风。
+
+局域网放行防火墙（管理员 PowerShell，只需一次）：
+
+```powershell
+New-NetFirewallRule -DisplayName ptoy-tcp -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4173,7880,7881 -RemoteAddress LocalSubnet
+New-NetFirewallRule -DisplayName ptoy-udp -Direction Inbound -Action Allow -Protocol UDP -LocalPort 7882 -RemoteAddress LocalSubnet
+```
+
+手机等设备在外网访问时用 Tailscale，`tailscale serve` 提供 HTTPS：
+
+1. Windows 和手机都安装 [Tailscale](https://tailscale.com/download)，登录同一个账号。
+2. 在 Tailscale 管理后台 → DNS，打开 **MagicDNS** 和 **HTTPS Certificates**。
+3. 在 Windows 上查本机的 Tailscale 地址：
+
+   ```powershell
+   tailscale ip -4          # 100.x.y.z
+   tailscale status         # 第一行是本机名，完整域名形如 <本机名>.<tailnet>.ts.net
+   ```
+
+4. 用 `tailscale serve` 给网页和 LiveKit 加 HTTPS（只需一次，`--bg` 会一直保持）：
+
+   ```powershell
+   tailscale serve --bg --https=443 4173
+   tailscale serve --bg --https=8443 7880
+   tailscale serve status
+   ```
+
+5. 放行 Tailscale 网段的防火墙（管理员 PowerShell，只需一次）：
+
+   ```powershell
+   New-NetFirewallRule -DisplayName ptoy-tailscale-tcp -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4173,7880,7881 -RemoteAddress 100.64.0.0/10
+   New-NetFirewallRule -DisplayName ptoy-tailscale-udp -Direction Inbound -Action Allow -Protocol UDP -LocalPort 7882 -RemoteAddress 100.64.0.0/10
+   ```
+
+6. 在 `apps\agent\.env` 里加两行（换成第 3 步查到的值），然后重启 `pnpm app`：
+
+   ```ini
+   LIVEKIT_PUBLIC_URL=wss://<本机名>.<tailnet>.ts.net:8443
+   LIVEKIT_NODE_IP=100.x.y.z
+   ```
+
+7. 手机打开 Tailscale，再用浏览器访问 `https://<本机名>.<tailnet>.ts.net`。
+
+设了 `LIVEKIT_NODE_IP` 之后，所有访问的设备都要通过 Tailscale 连接；只在本机测试时去掉这两行即可。
+
+分享固定角色链接时，要从对方也能访问的 HTTPS 地址打开主页再复制，链接使用当前页面的域名。
+
+### 4 验收和定位
 
 按顺序检查：三个模型独立调用成功 → 网页加入房间 → 说话出现用户字幕 → AI 字幕与声音正常 → 再次开口能打断 → 下一轮继续对话。只有 HTTP 200 或端口监听不算完整通话通过。
 
@@ -149,6 +220,6 @@ pnpm app
 | 无用户字幕 | ASR health、CPU/GPU 实际设备、`ASR_URL`、Agent 的 `ptoy.stt_error` 日志 |
 | 有用户字幕，没有回复 | llama-server health、`/v1` 路径、模型别名及 Agent 的 LLM 错误 |
 | 有回复但没声音 | `TTS_BACKEND` 与实际运行的服务是否一致（API :8002 / WebUI :7860）、8002 health、Agent 的 TTS 错误；用 WebUI 时再查参考音频是否在 Agent 本机 |
-| 本机能用，另一台设备不行 | 服务地址、LiveKit 公网/局域网地址、网络及 README 的防火墙配置 |
+| 本机能用，另一台设备不行 | 服务地址、LiveKit 公网/局域网地址、网络及 [防火墙配置](#3-从其他设备访问) |
 
 `pnpm app` 窗口的 `Ctrl+C` 只停止它自己启动的应用子进程；三个模型要在各自窗口停止。更换 GPU 模型后按仓库规则重新运行 `bench/bench_gpu.py`；性能结论以 Windows 本机压测为准，记录入口和指标见架构文档。
