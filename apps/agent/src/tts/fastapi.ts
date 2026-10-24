@@ -7,6 +7,10 @@ export interface IndexTtsFastApiOptions {
   readonly url: string;
   /** Speaker reference id on the service (the character's voice); omitted → the service default. */
   readonly voice?: string;
+  /** Speaking-rate multiplier sent as `speed` (ADR 0009); omitted or 1 → not sent. */
+  readonly speed?: number;
+  /** Inner-pause cap sent as `max_pause_ms` (ADR 0009); omitted → the service setting. */
+  readonly maxPauseMs?: number;
   /** `reference`: emotion follows the server's speaker reference; `vector`: the segment emotion is sent. */
   readonly emotionControl: 'reference' | 'vector';
   /** Emotion strength sent as `emo_alpha` with a non-calm emotion; omitted → the service default. */
@@ -73,6 +77,8 @@ export class IndexTtsFastApiBackend implements TtsBackend {
     const combined = AbortSignal.any([signal, timeout]);
     const body: Record<string, unknown> = { text: segment.text, request_id: requestId };
     if (this.#opts.voice !== undefined) body.voice = this.#opts.voice;
+    if (this.#opts.speed !== undefined && this.#opts.speed !== 1) body.speed = this.#opts.speed;
+    if (this.#opts.maxPauseMs !== undefined) body.max_pause_ms = this.#opts.maxPauseMs;
     if (this.#opts.emotionControl === 'vector') {
       body.emotion = segment.emotion;
       if (this.#opts.emotionWeight !== undefined) body.emo_alpha = this.#opts.emotionWeight;

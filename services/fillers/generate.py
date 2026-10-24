@@ -66,16 +66,17 @@ class FastApiTtsClient:
     """services/tts 的 POST /tts：参考音频是服务端的 <音色>.wav，返回裸 s16le PCM。
     情感向量与 WebUI 一样经 normalize_emo_vec，强度用服务的 TTS_EMO_ALPHA（默认 0.65，同 WebUI 的 emo_weight）。"""
 
-    def __init__(self, url, voice):
+    def __init__(self, url, voice, speed=1.0, max_pause_ms=None):
         self.url = url.rstrip("/")
         self.voice = voice
+        self.tuning = {"speed": speed, **({"max_pause_ms": max_pause_ms} if max_pause_ms else {})}
         with urllib.request.urlopen(f"{self.url}/health", timeout=10) as resp:
             voices = json.load(resp).get("voices", [])
         if voice not in voices:
             sys.exit(f"TTS 服务没有音色 {voice!r}（/health 的 voices：{voices}）")
 
     def synth(self, text, emotion=None):
-        body = {"text": text, "voice": self.voice}
+        body = {"text": text, "voice": self.voice, **self.tuning}
         if emotion:
             unknown = set(emotion) - set(EMOTIONS)
             if unknown:
@@ -166,6 +167,9 @@ def main():
                         help="角色音色参考音频（环境变量 INDEXTTS_REF_AUDIO）；fastapi 可不填，填了只用来在 manifest 记 sha256")
     parser.add_argument("--voice", required=True,
                         help="音色 id：与 TTS 服务 TTS_VOICES_DIR 里的 <音色>.wav、角色文件的 voice: 一致")
+    parser.add_argument("--speed", type=float, default=1.0,
+                        help="fastapi：语速倍数，取角色文件的 tts_speed（ADR 0009），让语气词和回复一样快")
+    parser.add_argument("--max-pause-ms", type=int, help="fastapi：句中停顿上限，取角色文件的 tts_max_pause_ms")
     parser.add_argument("--only", action="append", metavar="ID", help="只重新生成指定 id，可重复")
     parser.add_argument("--defs", default=str(DEFAULT_DEFS), help="语气词定义文件")
     parser.add_argument("--out", help="输出目录（音频 + manifest.json），默认 assets/fillers/<音色>")
@@ -193,7 +197,12 @@ def main():
     else:
         entries = {}
 
-    tts = FastApiTtsClient(args.tts_url, args.voice) if args.backend == "fastapi" else TtsClient(args.tts_url, args.ref)
+    if args.backend == "fastapi":
+        tts = FastApiTtsClient(args.tts_url, args.voice, args.speed, args.max_pause_ms)
+    elif args.speed != 1.0 or args.max_pause_ms:
+        parser.error("--speed / --max-pause-ms 只支持 fastapi 后端")
+    else:
+        tts = TtsClient(args.tts_url, args.ref)
     print(f"合成 {len(todo)} 条语气词 → {out_dir}")
     for filler in todo:
         entries[filler["id"]] = generate_one(tts, filler, out_dir)

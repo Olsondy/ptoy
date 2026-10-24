@@ -75,6 +75,19 @@ describe('IndexTTS FastAPI backend request', () => {
     expect(server.calls[0]!.request_id).not.toBe(server.calls[1]!.request_id);
   });
 
+  it('sends the character speed and pause cap (ADR 0009)', async () => {
+    const { server, backend } = await setup({}, { speed: 1.06, maxPauseMs: 300 });
+    await backend.synthesize({ text: '嗯。', emotion: '平静' }, never());
+    expect(server.calls[0]).toMatchObject({ speed: 1.06, max_pause_ms: 300 });
+  });
+
+  it('sends no tuning fields for a character at the default speed', async () => {
+    const { server, backend } = await setup({}, { speed: 1 });
+    await backend.synthesize({ text: '嗯。', emotion: '平静' }, never());
+    expect(server.calls[0]).not.toHaveProperty('speed');
+    expect(server.calls[0]).not.toHaveProperty('max_pause_ms');
+  });
+
   it('sends the emotion strength as emo_alpha in vector mode', async () => {
     const { server, backend } = await setup({}, { emotionControl: 'vector', emotionWeight: 0.8 });
     await backend.synthesize({ text: '太好了！', emotion: '喜' }, never());

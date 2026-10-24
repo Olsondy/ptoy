@@ -4,7 +4,8 @@ No torch / indextts imports here: the model sits behind the `Engine` protocol (r
 `engine.py`), so this module is unit-tested with a fake engine on any machine.
 
 API (see README.md):
-  POST /tts              {text, voice?, emotion?, emotion_vector?, emo_alpha?, generation?, request_id?} → s16le mono PCM
+  POST /tts              {text, voice?, emotion?, emotion_vector?, emo_alpha?, generation?, speed?, max_pause_ms?,
+                          request_id?} → s16le mono PCM
   POST /warm             {voice} load a voice's speaker conditioning ahead of the first /tts
   POST /cancel/{id}      drop a queued request / discard (and best-effort abort) a running one
   GET  /health           model info, queue state, VRAM
@@ -56,11 +57,12 @@ class Engine(Protocol):
         should_abort: Callable[[], bool],
         generation: Optional[dict[str, Any]] = None,
         voice: Optional[str] = None,
+        speed: float = 1.0,
     ) -> np.ndarray:
         """Returns mono int16 PCM at `sample_rate`. May raise `SynthesisAborted` once `should_abort()` is true.
 
         `generation` overrides the configured sampling parameters for this call only;
-        `voice` picks the speaker reference (None = `default_voice`)."""
+        `voice` picks the speaker reference (None = `default_voice`); `speed` > 1 speaks faster."""
         ...
 
     def info(self) -> dict[str, Any]:
@@ -120,6 +122,9 @@ class TtsRequest(BaseModel):
     emotion_vector: Optional[list[float]] = Field(default=None, min_length=8, max_length=8)
     emo_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     generation: Optional[GenerationOverrides] = None
+    # Per-character tuning (ADR 0009): speaking rate and the inner-pause cap of this request.
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    max_pause_ms: Optional[int] = Field(default=None, ge=100, le=2000)
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("text")
@@ -144,6 +149,14 @@ class TtsRequest(BaseModel):
         return self
 
 
+def pause_limits(configured: Optional[PauseLimits], max_pause_ms: Optional[int]) -> Optional[PauseLimits]:
+    """A request's `max_pause_ms` caps inner pauses and keeps 0.6× that as trailing silence (ADR 0009)."""
+    if max_pause_ms is None:
+        return configured
+    lead = configured.lead_ms if configured is not None else PauseLimits().lead_ms
+    return PauseLimits(lead_ms=lead, trail_ms=round(max_pause_ms * 0.6), max_pause_ms=max_pause_ms)
+
+
 class WarmRequest(BaseModel):
     voice: str = Field(min_length=1, max_length=128)
 
@@ -151,7 +164,7 @@ class WarmRequest(BaseModel):
 class Job:
     def __init__(
         self, job_id: str, text: str, emo_vector: Optional[list[float]], emo_alpha: float,
-        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None, speed: float = 1.0,
     ):
         self.id = job_id
         self.text = text
@@ -159,6 +172,7 @@ class Job:
         self.emo_alpha = emo_alpha
         self.generation = generation
         self.voice = voice
+        self.speed = speed
         self.future: concurrent.futures.Future = concurrent.futures.Future()
         self.cancelled = threading.Event()
         self.state: Literal["queued", "running", "done"] = "queued"
@@ -266,7 +280,7 @@ class SynthesisQueue:
             try:
                 result = self._engine.synthesize(
                     job.text, job.emo_vector, job.emo_alpha, job.cancelled.is_set,
-                    generation=job.generation, voice=job.voice,
+                    generation=job.generation, voice=job.voice, speed=job.speed,
                 )
             except SynthesisAborted:
                 error = JobCancelled()
@@ -318,6 +332,7 @@ def create_app(
         generation = body.generation.model_dump(exclude_none=True) if body.generation else None
         job = Job(
             job_id, body.text, emotion_vector(body.emotion, body.emotion_vector), alpha, generation or None, body.voice,
+            body.speed,
         )
         headers = {"X-Request-Id": job_id}
         try:
@@ -342,8 +357,9 @@ def create_app(
         pcm = np.asarray(pcm)
         if pcm.dtype != np.int16:
             return _error(500, "synthesis_failed", f"engine returned {pcm.dtype}, expected int16", headers)
-        if pauses is not None:
-            pcm = tighten(pcm.reshape(-1), engine.sample_rate, pauses)
+        limits = pause_limits(pauses, body.max_pause_ms)
+        if limits is not None:
+            pcm = tighten(pcm.reshape(-1), engine.sample_rate, limits)
         data = pcm.reshape(-1).astype("<i2", copy=False).tobytes()
         queue_ms = (job.started_at - job.enqueued_at) * 1000 if job.started_at else 0.0
         synth_ms = (job.finished_at - job.started_at) * 1000 if job.started_at and job.finished_at else 0.0
@@ -400,6 +416,7 @@ def create_app(
         return {
             "status": "ok", **queue.stats(), **engine.info(),
             "generation_overrides": list(GenerationOverrides.model_fields),
+            "request_tuning": ["speed", "max_pause_ms"],
         }
 
     return app

@@ -17,7 +17,8 @@ INDEXTTS_REF_AUDIO=/path/to/xiaoyou-default.wav \
 
 # 不切 WebUI：直接用正在跑的 TTS 服务（音色是服务端 TTS_VOICES_DIR 里的 <音色>.wav；
 # 不给 --ref 时 manifest 的 ref_sha256 为 null）
-.venv/bin/python services/fillers/generate.py --backend fastapi --tts-url http://192.168.31.82:8002 --voice zhixia
+.venv/bin/python services/fillers/generate.py --backend fastapi --tts-url http://192.168.31.82:8002 --voice zhixia \
+  --speed 1.12 --max-pause-ms 300   # 角色文件的 tts_speed / tts_max_pause_ms（ADR 0009），语气词和回复一样快
 
 # 只重做某几条（其余条目保留在 manifest 中）
 .venv/bin/python services/fillers/generate.py --voice xiaoyou-default --tts-url http://... --ref /path/to/xiaoyou-default.wav --only ack_hao_de --only thinking_en
