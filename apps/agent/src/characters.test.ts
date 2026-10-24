@@ -102,6 +102,7 @@ describe('loadCharacters', () => {
       loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters.map((c) => [c.id, c.tts]),
     );
     expect(tuning).toEqual({
+      linqian: { speed: 1.5, maxPauseMs: 300 },
       rouyi: { speed: 1, style: '亲密中文耳语，轻声性感' },
       xiaoyou: { speed: 1.06, maxPauseMs: 300 },
       zhixia: { speed: 1.12, maxPauseMs: 300 },
