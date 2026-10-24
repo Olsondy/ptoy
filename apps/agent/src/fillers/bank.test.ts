@@ -5,8 +5,8 @@ import { DEFAULT_CHARACTERS_DIR, DEFAULT_FILLERS_DIR } from '../config.js';
 import { type Filler, FillerBank, fillerAudio, fillerGate, fillerManifestPath, loadFillerBank } from './bank.js';
 
 describe('loadFillerBank', () => {
-  it('ships a filler set for every shipped character voice', () => {
-    for (const c of loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters) {
+  it('ships a filler set for every shipped IndexTTS character voice', () => {
+    for (const c of loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou', { ttsBackend: 'fastapi' }).characters) {
       expect(existsSync(fillerManifestPath(DEFAULT_FILLERS_DIR, c.voice)), `${c.id} → ${c.voice}`).toBe(true);
     }
   });

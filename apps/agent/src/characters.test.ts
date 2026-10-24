@@ -14,16 +14,18 @@ describe('parseCharacterFile', () => {
       description: '老朋友',
       voice: 'chunqing',
       tts: { speed: 1 },
+      ttsBackends: ['gradio', 'fastapi'],
       instructions: '你叫小悠。\n\n通话规则',
     });
   });
 
   it('reads the optional TTS tuning and rejects values out of range', () => {
     const file = (extra: string) => `---\nname: 小悠\nvoice: v\n${extra}\n---\n你叫小悠。`;
-    expect(parseCharacterFile('a', file('tts_speed: 1.06\ntts_max_pause_ms: 300\ntts_emo_weight: 0.3'), 'R').tts).toEqual({
+    expect(parseCharacterFile('a', file('tts_speed: 1.06\ntts_max_pause_ms: 300\ntts_emo_weight: 0.3\ntts_style: 轻声耳语'), 'R').tts).toEqual({
       speed: 1.06,
       maxPauseMs: 300,
       emoWeight: 0.3,
+      style: '轻声耳语',
     });
     const bads = ['tts_speed: 快', 'tts_speed: 1.6', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5', 'tts_emo_weight: 2'];
     for (const bad of bads) {
@@ -62,12 +64,27 @@ describe('loadCharacters', () => {
     expect(catalog.defaultCharacter.instructions).toBe('我是 B。\n\n规则');
   });
 
+  it('leaves the shared rules out when they are off', () => {
+    expect(loadCharacters(dir, 'b', { sharedRules: false }).defaultCharacter.instructions).toBe('我是 B。');
+  });
+
   it('resolves unknown or missing ids to the default', () => {
     const catalog = loadCharacters(dir, 'a');
     expect(catalog.get('b')?.name).toBe('B');
     expect(catalog.get('nope')).toBeUndefined();
     expect(catalog.resolve(undefined).id).toBe('a');
     expect(catalog.resolve('nope').id).toBe('a');
+  });
+
+  it('keeps only the characters made for the TTS backend (default: the IndexTTS ones)', () => {
+    writeFileSync(join(dir, 'f.md'), '---\nname: F\nvoice: v\ntts_backends: openrouter\n---\n我是 F。');
+    const ids = (backend?: 'fastapi' | 'openrouter') =>
+      loadCharacters(dir, backend === 'openrouter' ? 'f' : 'a', { ttsBackend: backend }).characters.map((c) => c.id);
+    expect(ids('fastapi')).toEqual(['a', 'b']);
+    expect(ids('openrouter')).toEqual(['f']);
+    expect(ids(undefined)).toEqual(['a', 'b', 'f']);
+    expect(() => loadCharacters(dir, 'a', { ttsBackend: 'openrouter' })).toThrow(/not made for this TTS_BACKEND/);
+    expect(() => parseCharacterFile('x', '---\nname: X\nvoice: v\ntts_backends: fish\n---\n我。', 'R')).toThrow(/tts_backends/);
   });
 
   it('fails when the default character does not exist', () => {
@@ -85,6 +102,7 @@ describe('loadCharacters', () => {
       loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters.map((c) => [c.id, c.tts]),
     );
     expect(tuning).toEqual({
+      rouyi: { speed: 1, style: '亲密中文耳语，轻声性感' },
       xiaoyou: { speed: 1.06, maxPauseMs: 300 },
       zhixia: { speed: 1.12, maxPauseMs: 300 },
       zhixin: { speed: 1.1, maxPauseMs: 300, emoWeight: 0.3 },
