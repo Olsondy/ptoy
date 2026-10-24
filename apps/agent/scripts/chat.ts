@@ -9,7 +9,7 @@
  * Same as the agent: system = persona + `_rules.md`; the message being answered carries
  * `[用户语气:X]` (none for 平静); past user messages are the raw text; past replies are what was
  * spoken (segmenter-cleaned, no tags); `temperature` / `max_tokens` from LLM_TEMPERATURE /
- * LLM_MAX_TOKENS, `reasoning_effort` from LLM_REASONING_EFFORT when set. Not reproduced: replies cut by a barge-in (the history keeps only the played part).
+ * LLM_MAX_TOKENS, `reasoning_effort` from LLM_REASONING_EFFORT or, unset, the model's lowest listed level. Not reproduced: replies cut by a barge-in (the history keeps only the played part).
  *
  * Type a line to say it. Prefix a tone to play the caller's ASR emotion: `怒:我都说了三遍了`.
  * Commands: /reset (new call), /system (print the system prompt), /history (print the messages).
@@ -18,7 +18,8 @@ import { createSegmenter, type Emotion, EMOTIONS } from '@ptoy/segmenter';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { loadCharacters } from '../src/characters.js';
-import { DEFAULT_CHARACTERS_DIR } from '../src/config.js';
+import { DEFAULT_CHARACTERS_DIR, type ReasoningEffort } from '../src/config.js';
+import { withReasoningEffort } from '../src/llm/index.js';
 import { REPLY_SEGMENTER } from '../src/pipelines/conversation.js';
 import { withTone } from '../src/emotion/user-tone.js';
 
@@ -33,7 +34,12 @@ const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace
 const model = process.env.LLM_MODEL ?? 'qwen3-8b';
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
 const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 220);
-const reasoningEffort = process.env.LLM_REASONING_EFFORT || undefined;
+const { reasoningEffort } = await withReasoningEffort({
+  baseUrl,
+  model,
+  apiKey: process.env.LLM_API_KEY ?? 'no-key',
+  reasoningEffort: (process.env.LLM_REASONING_EFFORT || undefined) as ReasoningEffort | undefined,
+});
 const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
 const character = catalog.defaultCharacter;
 const out = (line: string) => process.stdout.write(`${line}\n`);
@@ -79,7 +85,7 @@ async function complete(messages: readonly Message[]): Promise<{ text: string; m
 async function main(): Promise<void> {
   const system: Message = { role: 'system', content: character.instructions };
   let history: Message[] = [system];
-  out(`${character.name}（${character.id}） · ${model} @ ${baseUrl} · temperature ${temperature} · max_tokens ${maxTokens}`);
+  out(`${character.name}（${character.id}） · ${model} @ ${baseUrl} · temperature ${temperature} · max_tokens ${maxTokens} · reasoning_effort ${reasoningEffort ?? '不传'}`);
   out('输入要说的话，语气前缀如“怒:”；/reset /system /history；Ctrl+D 退出\n');
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: '你> ' });

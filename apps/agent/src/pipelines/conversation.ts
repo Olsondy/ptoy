@@ -16,7 +16,7 @@ import { existsSync } from 'node:fs';
 import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
 import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
-import { createLlm } from '../llm/index.js';
+import { createLlm, withReasoningEffort } from '../llm/index.js';
 import {
   type Filler,
   type FillerBank,
@@ -230,7 +230,8 @@ class CharacterAgent extends voice.Agent {
  * {@link addWordBreaks}). One `turn timing` log line per turn (docs/architecture/server.md §12).
  */
 export const conversationPipeline: CallPipeline = async (ctx, caller) => {
-  const config = loadConversationConfig();
+  const loaded = loadConversationConfig();
+  const config = { ...loaded, llm: await withReasoningEffort(loaded.llm) };
   const logger = log().child({ pipeline: 'conversation', caller: caller.identity });
   const { vad, turnHandling } = createTurnTaking(config);
 
@@ -388,6 +389,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       asr: config.asrUrl,
       llm: config.llm.baseUrl,
       model: config.llm.model,
+      reasoningEffort: config.llm.reasoningEffort ?? 'not sent',
       tts: tts.provider,
       ttsUrl: config.tts.url,
       fillers: fillerBank?.fillers.length ?? 0,
