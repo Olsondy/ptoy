@@ -45,6 +45,8 @@ export function createStt(
     baseUrl: config.asrUrl,
     timeoutMs: config.asrTimeoutMs,
     language: config.asrLanguage,
+    apiKey: config.asrApiKey,
+    model: config.asrModel,
     onTranscript,
     ignore,
   });

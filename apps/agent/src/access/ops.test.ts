@@ -111,9 +111,11 @@ describe('cloud admission and maintenance boundary', () => {
     expect(loadAgentHealthConfig({})).toEqual({ host: '127.0.0.1', port: 8081 });
     expect(() => loadAgentHealthConfig({ AGENT_HEALTH_PORT: 'bad' })).toThrow();
   });
-  it('does not probe hosted OpenRouter LLM or TTS', () => {
-    const urls = loadModelChecksConfig({ LLM_BASE_URL: 'https://openrouter.ai/api/v1', TTS_BACKEND: 'openrouter' }).urls;
-    expect(urls).toEqual(['http://127.0.0.1:8001/health']);
+  it('does not probe hosted OpenRouter ASR, LLM or TTS', () => {
+    const urls = (asr?: string) =>
+      loadModelChecksConfig({ ASR_URL: asr, LLM_BASE_URL: 'https://openrouter.ai/api/v1', TTS_BACKEND: 'openrouter' }).urls;
+    expect(urls()).toEqual(['http://127.0.0.1:8001/health']);
+    expect(urls('https://openrouter.ai/api')).toEqual([]);
   });
   it('shares in-flight probes and bounds cached readiness', async () => {
     let now = 1;
