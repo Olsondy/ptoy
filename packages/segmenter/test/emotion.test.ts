@@ -60,6 +60,13 @@ describe("emotion tags", () => {
     ]);
   });
 
+  it("in reply scope a later tag does not cut, so short sentences can still merge", () => {
+    expect(run(chars("[哀]累成这样啊，[哀]真辛苦。[平静]要不要我给你讲个故事？"), { emotionScope: "reply", minSegmentChars: 10 })).toEqual([
+      { text: "累成这样啊，", emotion: "哀" },
+      { text: "真辛苦。要不要我给你讲个故事？", emotion: "哀" },
+    ]);
+  });
+
   it("treat unknown or malformed bracket content as 平静 and drop it from the text", () => {
     expect(run(chars("[开心]好的好的。[用户语气:喜]嗯嗯。【喜】行吧。[ 哀 ]唉。"))).toEqual([
       { text: "好的好的。", emotion: "平静" },

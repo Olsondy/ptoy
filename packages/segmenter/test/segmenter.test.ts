@@ -36,6 +36,14 @@ describe("first segment guards", () => {
 });
 
 describe("subsequent segments", () => {
+  it("merge a sentence shorter than minSegmentChars into the next one", () => {
+    expect(texts(run(chars("累成这样啊，真辛苦。要不要我给你讲个故事？你呢？"), { minSegmentChars: 10 }))).toEqual([
+      "累成这样啊，",
+      "真辛苦。要不要我给你讲个故事？",
+      "你呢？",
+    ]);
+  });
+
   it("cut only at sentence-ending punctuation, not at commas", () => {
     expect(texts(run(chars("好的，我知道了，你说得对。那我们明天见！好吗？嗯；再见…")))).toEqual([
       "好的，",
