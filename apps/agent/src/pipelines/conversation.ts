@@ -89,6 +89,33 @@ function stripWordBreaks(message: ChatMessage): void {
   message.content = message.content.map((c) => (typeof c === 'string' ? c.replaceAll(WORD_BREAK, '') : c));
 }
 
+/** One LLM call as the `llm reply` log line shows it (the per-turn emotion diagnostic). */
+export interface LlmReplyLog {
+  /** The user message as the LLM saw it, `[用户语气:X]` prefix included. */
+  readonly input: string;
+  /** The raw reply with its emotion tags, before the segmenter. */
+  readonly reply: string;
+  /** The reply's first tag: the emotion the whole reply is voiced with (`emotionScope: 'reply'`). */
+  readonly voicedEmotion: string;
+  /** The stream was cancelled (barge-in, or a discarded preemptive generation). */
+  readonly cancelled: boolean;
+}
+
+const FIRST_TAG = /^\s*[[【]([^\]】]{1,10})[\]】]/;
+
+/** Passes LLM chunks through and reports the full raw text once the stream ends or is cancelled. */
+function captureReply(onDone: (reply: string, cancelled: boolean) => void): TransformStream<llm.ChatChunk | string, llm.ChatChunk | string> {
+  let reply = '';
+  return new TransformStream({
+    transform(chunk, controller) {
+      reply += typeof chunk === 'string' ? chunk : (chunk.delta?.content ?? '');
+      controller.enqueue(chunk);
+    },
+    flush: () => onDone(reply, false),
+    cancel: () => onDone(reply, true),
+  });
+}
+
 interface FillerHooks {
   readonly bank: FillerBank;
   /** SenseVoice emotion of the turn's last utterance. */
@@ -109,22 +136,38 @@ interface FillerHooks {
 class CharacterAgent extends voice.Agent {
   readonly #fillers: FillerHooks | undefined;
   readonly #toneOf: (userText: string) => Emotion;
+  readonly #onReply: (entry: LlmReplyLog) => void;
   /** Signals the current turn's reply audio is ready (first TTS frame); set per filler turn. */
   #replyAudioReady: (() => void) | undefined;
 
-  constructor(options: voice.AgentOptions<unknown>, toneOf: (userText: string) => Emotion, fillers?: FillerHooks) {
+  constructor(
+    options: voice.AgentOptions<unknown>,
+    toneOf: (userText: string) => Emotion,
+    onReply: (entry: LlmReplyLog) => void,
+    fillers?: FillerHooks,
+  ) {
     super(options);
     this.#toneOf = toneOf;
+    this.#onReply = onReply;
     this.#fillers = fillers;
   }
 
   /**
    * The LLM sees the user message being answered with the caller's tone, e.g. `[用户语气:怒] …`
    * (#13). Only this request's copy is changed: history and subtitles keep the raw transcript.
+   * The raw tagged reply is reported to `onReply` for the `llm reply` log line.
    */
   override async llmNode(chatCtx: ChatContext, toolCtx: llm.ToolContext, modelSettings: ModelSettings) {
     const ctx = withUserTone(chatCtx, this.#toneOf);
-    return voice.Agent.default.llmNode(this, ctx, toolCtx, modelSettings);
+    const stream = await voice.Agent.default.llmNode(this, ctx, toolCtx, modelSettings);
+    if (!stream) return stream;
+    const last = ctx.items.at(-1);
+    const input = last?.type === 'message' ? (last.textContent ?? '') : '';
+    return stream.pipeThrough(
+      captureReply((reply, cancelled) =>
+        this.#onReply({ input, reply, voicedEmotion: FIRST_TAG.exec(reply)?.[1] ?? '平静', cancelled }),
+      ),
+    );
   }
 
   /**
@@ -215,7 +258,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       asrEmotion = t.emotion;
       tones.utterance(t.text, t.emotion);
       timing.onAsrResult(t.inferenceMs);
-      logger.debug({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
+      logger.info({ text: t.text, emotion: t.emotion, asrMs: t.inferenceMs, audioMs: t.audioMs }, 'user utterance');
     },
     backchannelWhileAgentTalks,
   );
@@ -327,7 +370,12 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   });
 
   await session.start({
-    agent: new CharacterAgent({ instructions: character.instructions }, toneOf, fillerHooks),
+    agent: new CharacterAgent(
+      { instructions: character.instructions },
+      toneOf,
+      (entry) => logger.info(entry, 'llm reply'),
+      fillerHooks,
+    ),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
     outputOptions: { audioSampleRate: config.audioSampleRate },

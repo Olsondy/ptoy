@@ -122,7 +122,7 @@ v5 各种用户语气下回复各段的情绪（40 条回复）：平静 → 平
 
 ### 需要人耳确认
 
-用 `pnpm app` 真人打电话：生气地说一句、开心地说一句，听 AI 回复的语气能否区分（验收标准 1）；“哀”句子是否太慢、`emo_weight=0.8` 时偶发的多余语气音（如句首的“哼”）是否可接受；平静句（参考音频）和情绪句接在一起时音色是否跳变。觉得情绪太弱或太强，调 `TTS_EMO_WEIGHT`（0.65–0.9 之间），不用改代码。真人麦克风下 SenseVoice 能否识别出生气/开心，看 Agent 的 `user utterance` debug 日志里的 `emotion` 和 `user tone for the llm`。
+用 `pnpm app` 真人打电话：生气地说一句、开心地说一句，听 AI 回复的语气能否区分（验收标准 1）；“哀”句子是否太慢、`emo_weight=0.8` 时偶发的多余语气音（如句首的“哼”）是否可接受；平静句（参考音频）和情绪句接在一起时音色是否跳变。觉得情绪太弱或太强，调 `TTS_EMO_WEIGHT`（0.65–0.9 之间），不用改代码。真人麦克风下 SenseVoice 能否识别出生气/开心，看 Agent 每轮的 info 日志：`user utterance` 的 `emotion` 是 SenseVoice 判的语气；`llm reply` 的 `input` 是模型实际收到的这句话（带 `[用户语气:X]`），`reply` 是带标签的原始回复，`voicedEmotion` 是整段实际合成用的情绪（第一个标签），`cancelled` 表示被打断或是被丢弃的抢先生成。Agent 默认 `LOG_LEVEL=info`，`debug` 才输出 LiveKit 内部日志。
 
 ## 出错时怎么办
 
