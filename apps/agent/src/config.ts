@@ -124,6 +124,7 @@ const conversationSchema = charactersSchema.extend({
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
+  LLM_REASONING_EFFORT: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
   TTS_BACKEND: z.enum(['gradio', 'fastapi']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
@@ -153,6 +154,11 @@ export interface LlmConfig {
   readonly temperature: number;
   readonly timeoutMs: number;
   readonly maxRetry: number;
+  /**
+   * `reasoning_effort` for hosted reasoning models (e.g. ChatGPT via a proxy); undefined = not sent.
+   * llama-server turns thinking off at launch instead, see docs/architecture/server.md §5.
+   */
+  readonly reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
 }
 
 export interface GradioTtsConfig {
@@ -246,6 +252,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       temperature: e.LLM_TEMPERATURE,
       timeoutMs: e.LLM_TIMEOUT_MS,
       maxRetry: e.LLM_MAX_RETRY,
+      ...(e.LLM_REASONING_EFFORT !== undefined && { reasoningEffort: e.LLM_REASONING_EFFORT }),
     },
     tts,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },

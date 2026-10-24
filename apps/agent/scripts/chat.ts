@@ -9,7 +9,7 @@
  * Same as the agent: system = persona + `_rules.md`; the message being answered carries
  * `[用户语气:X]` (none for 平静); past user messages are the raw text; past replies are what was
  * spoken (segmenter-cleaned, no tags); `temperature` / `max_tokens` from LLM_TEMPERATURE /
- * LLM_MAX_TOKENS. Not reproduced: replies cut by a barge-in (the history keeps only the played part).
+ * LLM_MAX_TOKENS, `reasoning_effort` from LLM_REASONING_EFFORT when set. Not reproduced: replies cut by a barge-in (the history keeps only the played part).
  *
  * Type a line to say it. Prefix a tone to play the caller's ASR emotion: `怒:我都说了三遍了`.
  * Commands: /reset (new call), /system (print the system prompt), /history (print the messages).
@@ -33,6 +33,7 @@ const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace
 const model = process.env.LLM_MODEL ?? 'qwen3-8b';
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
 const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 220);
+const reasoningEffort = process.env.LLM_REASONING_EFFORT || undefined;
 const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
 const character = catalog.defaultCharacter;
 const out = (line: string) => process.stdout.write(`${line}\n`);
@@ -54,7 +55,14 @@ function spoken(raw: string): { text: string; segments: string[] } {
 }
 
 async function complete(messages: readonly Message[]): Promise<{ text: string; ms: number }> {
-  const body = { model, messages, temperature, max_tokens: maxTokens, stream: false };
+  const body = {
+    model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+    stream: false,
+  };
   if (values['show-request']) out(`\n--- request ---\n${JSON.stringify(body, null, 2)}\n---------------`);
   const started = performance.now();
   const res = await fetch(`${baseUrl}/chat/completions`, {
