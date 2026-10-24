@@ -61,7 +61,7 @@ export class CharacterCatalog {
   }
 }
 
-const SPEED_RANGE = [0.8, 1.3] as const;
+const SPEED_RANGE = [0.8, 1.5] as const;
 const MAX_PAUSE_RANGE = [100, 1000] as const;
 
 function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTuning {

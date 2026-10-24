@@ -44,10 +44,13 @@ export const ATTRIBUTE_AGENT_ERROR = 'ptoy.agent_error';
  * voice (平静) and emotion-vector synthesis mid-reply, which sounded like the voice changing.
  * Sentences under 10 characters ride with the next one: a short segment takes longer to synthesize
  * than to play (~1.3 s fixed cost each), so the next one was not ready and the reply paused.
+ * The first segment needs 4 characters: IndexTTS2 drags out an opener synthesized on its own
+ * ("哈哈，" alone took 1.2 s, half that inside "哈哈，真的假的？").
  */
 export const REPLY_SEGMENTER: SegmenterOptions = {
   emotionScope: 'reply',
   dropLeadingInterjection: true,
+  firstSegmentMinChars: 4,
   minSegmentChars: 10,
 };
 
