@@ -70,20 +70,16 @@ export function App() {
           <section className="call-stage" aria-label="语音通话">
             <div className="call-orb-status">
               <CallOrb room={call.room} status={call.status} />
-              <p className="call-status" data-testid="call-status" data-status={call.status} aria-live="polite">
-                <span className={`dot dot-${call.status}`} aria-hidden="true" />{STATUS_LABEL[call.status]}
+              <p className="call-status sr-only" data-testid="call-status" data-status={call.status} aria-live="polite">
+                {STATUS_LABEL[call.status]}
               </p>
-            </div>
-            <div className="call-conversation">
-              {call.room ? <CallTranscript key={call.room.name} visible={captions} characterName={characterName} /> : (
-                <div className="call-welcome">
-                  <h1>{inCall ? '马上就好' : characters.locked
+              <div className="call-conversation">
+                {call.room ? <CallTranscript key={call.room.name} visible={captions} characterName={characterName} /> : (
+                  <h1 className="sr-only">{inCall ? '马上就好' : characters.locked
                     ? characters.loading ? '正在加载角色' : characters.error ? '暂时无法开始通话' : `和${characterName}聊聊`
                     : '想聊点什么？'}</h1>
-                  {!characters.error && <p className="welcome-description">{inCall ? '接通后，就可以自然地说话'
-                    : characters.locked && characters.loading ? '正在确认链接中的通话角色' : '不必想好开场，随时开始就好'}</p>}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </section>
           <CallControls status={call.status} error={characters.error ?? call.error ?? (logoutError || access.error || (!inCall && availability.error) || undefined)}

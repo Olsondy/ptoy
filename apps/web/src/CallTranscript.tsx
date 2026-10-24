@@ -51,14 +51,14 @@ export function CallTranscript({ visible, characterName }: { visible: boolean; c
 
   return (
     <div className="transcript-area">
-      <p className="conversation-state" aria-live="polite">{STATE_LABEL[assistant.state] ?? '正在等候回应'}</p>
+      <p className="sr-only" aria-live="polite">{STATE_LABEL[assistant.state] ?? '正在等候回应'}</p>
       <div className="caption-window" hidden={!visible} aria-label="实时字幕" data-testid="caption-window">
         {latest.length ? latest.map((entry) => (
           <div className={`caption-line caption-${entry.speaker}`} key={entry.id}>
             <span className="caption-speaker">{entry.speaker === 'user' ? '你' : characterName}</span>
             <CaptionText text={entry.text} speaker={entry.speaker} />
           </div>
-        )) : <p className="caption-empty">说点什么吧，字幕会出现在这里</p>}
+        )) : null}
       </div>
       {(agentError || sttError) && <div className="transcript-errors">
         {agentError && <p role="alert" data-testid="agent-error">{agentError}</p>}

@@ -117,10 +117,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .character-link-feedback p { margin: 0; }
 .character-link-url { display: block; margin-top: 8px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
 .call-welcome h1 { overflow-wrap: anywhere; }
-.call-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--call-type-label); line-height: 1.5; color: var(--muted-foreground); }
 .dot { width: 5px; height: 5px; border-radius: 50%; background: #777983; }
 .dot-connecting { background: #d5b47b; }
-.call-status[data-status="connected"] { color: var(--call-connected); }
 .dot-connected { background: var(--call-connected); }
 
 .call-stage {
@@ -130,14 +128,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
   padding-block: 24px 8px;
 }
-.call-orb-status { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.orb-slot { position: relative; width: min(60vw, 34dvh, 300px); min-width: 160px; aspect-ratio: 1; }
+/* The orb alone sets the layout; captions hang below it without moving it off center. */
+.call-orb-status { position: relative; display: flex; flex-direction: column; align-items: center; }
+.orb-slot { position: relative; width: min(72vw, 42dvh, 400px); min-width: 160px; aspect-ratio: 1; }
 /* Preserve the existing renderer's halo beyond its layout slot. */
 .orb-canvas { position: absolute; inset: -22%; width: 144%; height: 144%; pointer-events: none; }
-.call-conversation { width: min(100%, 36rem); min-height: 184px; text-align: center; position: relative; }
+.call-conversation { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: min(calc(100vw - 56px), 36rem); margin-top: 16px; text-align: center; }
 .call-welcome { padding: 24px 0 28px; }
 .call-welcome h1 { margin-block: 0 12px; font-size: var(--call-type-title); font-weight: 500; line-height: 1.4; letter-spacing: 0; text-wrap: balance; }
 .welcome-description { font-size: var(--call-type-secondary); line-height: 1.7; color: var(--muted-foreground); text-wrap: balance; }
@@ -204,8 +202,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 .transcript-area { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.conversation-state { color: var(--muted-foreground); font-size: var(--call-type-label); line-height: 1.5; }
-.caption-window { width: 100%; min-height: 108px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.caption-window { width: 100%; min-height: 72px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
 .caption-window[hidden] { display: none; }
 .caption-line { --caption-size: var(--call-type-body); display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 12px; text-align: left; align-items: start; padding-inline: 12px; }
 .caption-speaker { color: var(--muted-foreground); font-size: var(--call-type-label); line-height: calc(var(--caption-size) * 1.7); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -213,7 +210,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .caption-line p { font-size: var(--caption-size); font-weight: 400; line-height: 1.7; letter-spacing: 0.01em; overflow-wrap: anywhere; max-height: 5.1em; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; text-wrap: pretty; }
 .caption-user { --caption-size: var(--call-type-secondary); }
 .caption-user p { color: var(--muted-foreground); max-height: 3.4em; }
-.caption-empty { color: var(--muted-foreground); font-size: var(--call-type-secondary); line-height: 1.7; text-wrap: balance; }
 .transcript-errors { width: 100%; color: var(--destructive); font-size: var(--call-type-secondary); line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; }
 
 .orb-preview { position: fixed; bottom: 150px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: #25262a; z-index: 10; }
@@ -222,26 +218,18 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 @media (max-width: 600px) {
   .call { padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
-  .call-stage { gap: 18px; }
-  .call-conversation { min-height: 180px; }
+  .call-conversation { width: calc(100vw - 36px); }
   .caption-line { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 12px; padding-inline: 0; }
 }
 @media (max-height: 650px) {
   .call { padding-block: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-bottom)); }
-  .call-stage { padding-top: 12px; gap: 8px; }
-  .call-conversation { min-height: 160px; }
+  .call-stage { padding-top: 12px; }
   .call-footer { gap: 10px; }
 }
 @media (max-height: 500px) and (min-width: 480px) and (orientation: landscape) {
-  .call-stage {
-    display: grid;
-    grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr);
-    gap: 20px;
-    padding-block: 12px;
-  }
-  .call-orb-status { justify-self: center; }
-  .call-conversation { min-height: 0; }
-  .call-welcome { padding-block: 12px; }
+  .call-stage { padding-block: 12px; }
+  /* Too short for captions below the orb: put them beside it. */
+  .call-conversation { top: 50%; left: 100%; transform: translateY(-50%); width: min(40vw, 28rem); margin: 0 0 0 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
