@@ -22,7 +22,9 @@ Agent 每次 `POST /tts` 把这两个值带上（`speed`、`max_pause_ms`），T
 
 ## 语速的实现
 
-IndexTTS 2.5 的 `infer()` 有 `duration_factor` 参数（之前只能用环境变量 `TTS_DURATION_FACTOR` 全局设置）。服务把按请求的 `speed` 换算成 `duration_factor = TTS_DURATION_FACTOR / speed`。换算方向要在 Windows 本机用同一句话实测时长后确认，结论写回本节。若 `duration_factor` 改变的不是语速（比如只截断或拉长尾部），改为服务端对输出做保持音高的变速。
+IndexTTS 2.5 的 `infer()` 有 `duration_factor` 参数（之前只能用环境变量 `TTS_DURATION_FACTOR` 全局设置）。服务把按请求的 `speed` 换算成 `duration_factor = TTS_DURATION_FACTOR / speed`。
+
+实测（2026-10-24，FastAPI，同一句 25 字，去掉静音后的有声时长）：`speed` 0.8 / 1.0 / 1.25 时，`xiaoyou-default` 为 4.66 / 3.71–3.87 / 2.75–3.09s，`zhixia` 为 5.31 / 4.21–4.22 / 3.18–3.24s。方向正确，而且基本成比例（1.25 时约 0.77 倍，0.8 时约 1.2 倍），改变的是念字速度本身，不只是尾部长度，所以不需要服务端另做变速。
 
 ## Considered Options
 
