@@ -6,7 +6,7 @@
  *   pnpm --filter @ptoy/agent chat                         # DEFAULT_CHARACTER, LLM_* from .env
  *   pnpm --filter @ptoy/agent chat -- --character zhixia --show-request
  *
- * Same as the agent: system = persona + `_rules.md`; the message being answered carries
+ * Same as the agent: system = persona + `_rules.md` (unless LLM_SHARED_RULES=false); the message being answered carries
  * `[用户语气:X]` (none for 平静); past user messages are the raw text; past replies are what was
  * spoken (segmenter-cleaned, no tags); `temperature` / `max_tokens` from LLM_TEMPERATURE /
  * LLM_MAX_TOKENS, `reasoning_effort` from LLM_REASONING_EFFORT or, unset, the model's lowest listed level. Not reproduced: replies cut by a barge-in (the history keeps only the played part).
@@ -40,7 +40,9 @@ const { reasoningEffort } = await withReasoningEffort({
   apiKey: process.env.LLM_API_KEY ?? 'no-key',
   reasoningEffort: (process.env.LLM_REASONING_EFFORT || undefined) as ReasoningEffort | undefined,
 });
-const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
+// Same switch as the agent (LLM_SHARED_RULES): off → no `_rules.md`, no tone prefix.
+const sharedRules = !['false', '0'].includes(process.env.LLM_SHARED_RULES ?? '');
+const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character, sharedRules);
 const character = catalog.defaultCharacter;
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -129,7 +131,7 @@ async function main(): Promise<void> {
       }
       try {
         // Only the message being answered carries the tone; it is stored raw afterwards.
-        const { text: raw, ms } = await complete([...history, { role: 'user', content: withTone(text, tone) }]);
+        const { text: raw, ms } = await complete([...history, { role: 'user', content: sharedRules ? withTone(text, tone) : text }]);
         const reply = spoken(raw);
         history = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply.text }];
         out(`${character.name}> ${reply.text}`);

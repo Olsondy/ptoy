@@ -11,7 +11,7 @@ import {
   voice,
 } from '@livekit/agents';
 import type { AudioFrame } from '@livekit/rtc-node';
-import type { Emotion, SegmenterOptions } from '@ptoy/segmenter';
+import { DEFAULT_EMOTION, type Emotion, type SegmenterOptions } from '@ptoy/segmenter';
 import { existsSync } from 'node:fs';
 import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
@@ -240,7 +240,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   // The page's pick arrives as a caller attribute (ADR 0007); a stale or missing id gets the default.
   const requested = caller.attributes[ATTRIBUTE_CHARACTER] || undefined;
-  const character = loadCharacters(config.characters.dir, config.characters.defaultId).resolve(requested);
+  const character = loadCharacters(config.characters.dir, config.characters.defaultId, config.sharedRules).resolve(requested);
   if (requested !== undefined && requested !== character.id) {
     logger.warn({ requested, character: character.id }, 'unknown character, using the default');
   }
@@ -267,7 +267,8 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     backchannelWhileAgentTalks,
   );
   const toneOf = (userText: string) => {
-    const tone = tones.toneOf(userText);
+    // The tone prefix is explained by `_rules.md`; without it the LLM would read it as text.
+    const tone = config.sharedRules ? tones.toneOf(userText) : DEFAULT_EMOTION;
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
@@ -283,6 +284,15 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       { voice: character.voice, tuning: character.tts },
       'gradio tts speaks every character with TTS_REF_AUDIO and ignores the per-character speed and pauses',
     );
+  }
+  if (config.tts.backend === 'openrouter') {
+    const providerVoice = config.tts.voices[character.voice];
+    if (providerVoice === undefined) {
+      logger.warn({ voice: character.voice }, 'no TTS_OPENROUTER_VOICES entry for this voice, the model default speaks');
+    }
+    if (config.fillers) {
+      logger.warn({ voice: character.voice }, 'fillers were recorded with IndexTTS and may not match the OpenRouter voice');
+    }
   }
   // Fillers in another voice would sound like a second person answering: no set, no fillers.
   let fillerBank: FillerBank | undefined;

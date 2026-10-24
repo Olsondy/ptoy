@@ -26,6 +26,8 @@ export interface TtsTuning {
   readonly maxPauseMs?: number;
   /** Emotion strength for tagged sentences (`tts_emo_weight`); undefined = `TTS_EMO_WEIGHT`. */
   readonly emoWeight?: number;
+  /** Delivery hint spoken before every sentence (`tts_style`, e.g. 亲密中文耳语); OpenRouter/Fish only. */
+  readonly style?: string;
 }
 
 export interface Character extends CharacterSummary {
@@ -80,17 +82,19 @@ function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTun
   };
   const maxPauseMs = number('tts_max_pause_ms', MAX_PAUSE_RANGE, true);
   const emoWeight = number('tts_emo_weight', EMO_WEIGHT_RANGE, false);
+  const style = fields.get('tts_style');
   return {
     speed: number('tts_speed', SPEED_RANGE, false) ?? 1,
     ...(maxPauseMs !== undefined && { maxPauseMs }),
     ...(emoWeight !== undefined && { emoWeight }),
+    ...(style && { style }),
   };
 }
 
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
 /**
- * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n---\n<persona>`;
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n---\n<persona>`;
  * only flat `key: value` lines are supported.
  */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
@@ -120,11 +124,11 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
 }
 
 /**
- * Reads every `<id>.md` in `dir` plus the shared `_rules.md`. Read per call, so editing a
- * prompt takes effect on the next call without restarting anything.
+ * Reads every `<id>.md` in `dir` plus, with `sharedRules` (default), the shared `_rules.md`. Read per
+ * call, so editing a prompt takes effect on the next call without restarting anything.
  */
-export function loadCharacters(dir: string, defaultId: string): CharacterCatalog {
-  const rules = readFileSync(join(dir, RULES_FILE), 'utf8');
+export function loadCharacters(dir: string, defaultId: string, sharedRules = true): CharacterCatalog {
+  const rules = sharedRules ? readFileSync(join(dir, RULES_FILE), 'utf8') : '';
   const characters = readdirSync(dir)
     .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
     .sort()

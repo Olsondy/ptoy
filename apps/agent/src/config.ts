@@ -131,10 +131,19 @@ const conversationSchema = charactersSchema.extend({
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
   LLM_REASONING_EFFORT: z.enum(REASONING_EFFORTS).optional(),
-  TTS_BACKEND: z.enum(['gradio', 'fastapi']).default('gradio'),
+  LLM_SHARED_RULES: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+  TTS_BACKEND: z.enum(['gradio', 'fastapi', 'openrouter']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
   TTS_REF_AUDIO: z.string().min(1).optional(),
+  TTS_OPENROUTER_URL: z.string().url().default('https://openrouter.ai/api/v1'),
+  TTS_OPENROUTER_API_KEY: z.string().min(1).optional(),
+  TTS_OPENROUTER_MODEL: z.string().min(1).default('fish-audio/s2.1-pro'),
+  // `<character voice>=<provider voice id>` pairs, comma-separated.
+  TTS_OPENROUTER_VOICES: z.string().default(''),
   TTS_LANGUAGE: z.enum(['ZH', 'EN', 'JA', 'AR', 'ES']).default('ZH'),
   TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('vector'),
   TTS_EMO_WEIGHT: z.coerce.number().min(0).max(1).default(0.6),
@@ -198,13 +207,43 @@ export interface FastApiTtsConfig {
   readonly timeoutMs: number;
 }
 
+/** OpenRouter speech API (cloud, no local GPU): each character's `voice:` maps to a provider voice id. */
+export interface OpenRouterTtsConfig {
+  readonly backend: 'openrouter';
+  readonly url: string;
+  readonly apiKey: string;
+  readonly model: string;
+  /** Character voice → provider voice id; a voice missing here speaks with the model's default voice. */
+  readonly voices: Readonly<Record<string, string>>;
+  /** `reference`: text only; `vector`: the segment emotion becomes a `[情绪]` style hint. */
+  readonly emotionControl: 'reference' | 'vector';
+  readonly timeoutMs: number;
+}
+
 /** One variant per backend (`TTS_BACKEND`). */
-export type TtsConfig = GradioTtsConfig | FastApiTtsConfig;
+export type TtsConfig = GradioTtsConfig | FastApiTtsConfig | OpenRouterTtsConfig;
+
+/** `a=x, b=y` → `{ a: 'x', b: 'y' }`; undefined on a malformed pair. */
+function parseVoiceMap(value: string): Record<string, string> | undefined {
+  const map: Record<string, string> = {};
+  for (const pair of value.split(',').map((p) => p.trim()).filter(Boolean)) {
+    const [key, id, ...rest] = pair.split('=').map((p) => p.trim());
+    if (!key || !id || rest.length > 0) return undefined;
+    map[key] = id;
+  }
+  return map;
+}
 
 export interface ConversationConfig extends CallConfig {
   readonly llm: LlmConfig;
   readonly tts: TtsConfig;
   readonly characters: CharactersConfig;
+  /**
+   * Append `_rules.md` (call rules + emotion tags for IndexTTS2) to every persona and show the LLM the
+   * caller's tone (`[用户语气:X]`). Off for personas that carry their own rules, e.g. with
+   * TTS_BACKEND=openrouter: replies come untagged and speak as 平静.
+   */
+  readonly sharedRules: boolean;
   /** Sample rate of the agent's published audio track; TTS output is resampled to it. */
   readonly audioSampleRate: number;
   /** Play a pre-recorded filler when a user turn ends (`undefined` = disabled). */
@@ -227,12 +266,27 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
   if (parsed.success && parsed.data.TTS_BACKEND === 'gradio' && !parsed.data.TTS_REF_AUDIO) {
     issues.push('TTS_REF_AUDIO: required with TTS_BACKEND=gradio (speaker reference wav)');
   }
+  if (parsed.success && parsed.data.TTS_BACKEND === 'openrouter' && !parsed.data.TTS_OPENROUTER_API_KEY) {
+    issues.push('TTS_OPENROUTER_API_KEY: required with TTS_BACKEND=openrouter');
+  }
+  const voices = parsed.success ? parseVoiceMap(parsed.data.TTS_OPENROUTER_VOICES) : {};
+  if (voices === undefined) issues.push('TTS_OPENROUTER_VOICES: expected `voice=id` pairs separated by commas');
   if (!parsed.success || issues.length > 0) {
     throw new Error(`Invalid conversation pipeline env (see apps/agent/.env.example): ${issues.join('; ')}`);
   }
   const e = parsed.data;
   const tts: TtsConfig =
-    e.TTS_BACKEND === 'fastapi'
+    e.TTS_BACKEND === 'openrouter'
+      ? {
+          backend: 'openrouter',
+          url: e.TTS_OPENROUTER_URL,
+          apiKey: e.TTS_OPENROUTER_API_KEY as string,
+          model: e.TTS_OPENROUTER_MODEL,
+          voices: voices ?? {},
+          emotionControl: e.TTS_EMOTION_CONTROL,
+          timeoutMs: e.TTS_TIMEOUT_MS,
+        }
+      : e.TTS_BACKEND === 'fastapi'
       ? {
           backend: 'fastapi',
           url: e.TTS_FASTAPI_URL,
@@ -263,6 +317,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     },
     tts,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
+    sharedRules: e.LLM_SHARED_RULES,
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
     fillers: e.FILLERS_ENABLED
       ? { dir: e.FILLERS_DIR, always: e.FILLERS_ALWAYS, delayMs: e.FILLER_DELAY_MS }
