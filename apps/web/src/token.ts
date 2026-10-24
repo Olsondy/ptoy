@@ -30,6 +30,7 @@ export function accessErrorMessage(error: unknown): string {
     case 'rate_limited': return '尝试次数有点多，请稍后再试。';
     case 'maintenance': return '服务维护中，请稍后再试。';
     case 'models_unavailable': return '本地模型暂时离线，请稍后再试。';
+    case 'invalid_origin': return '当前访问地址未被服务允许，请联系邀请你的朋友。';
     default: return '服务暂时不可用，请稍后重试。';
   }
 }

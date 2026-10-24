@@ -88,6 +88,11 @@ test('验证错误：限流倒计时与网络失败可重试且保留输入', as
   await expect(page.getByRole('alert')).toContainText('暂时连不上');
   await expect(input).toHaveValue('TEST-CODE');
   await expect(page.getByRole('button', { name: '验证并进入' })).toBeEnabled();
+  await page.unroute('**/api/invite/redeem');
+  await page.route('**/api/invite/redeem', route => route.fulfill({ status: 403, json: { code: 'invalid_origin' } }));
+  await page.getByRole('button', { name: '验证并进入' }).click();
+  await expect(page.getByRole('alert')).toContainText('当前访问地址未被服务允许');
+  await expect(input).toHaveValue('TEST-CODE');
 });
 
 test('浏览器会话凭据消失后，已建立通话仍可查询状态并主动挂断', async ({ page, context, baseURL }) => {
