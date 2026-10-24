@@ -1,6 +1,6 @@
 import type { Emotion } from '@ptoy/segmenter';
+import { MIMEType } from 'node:util';
 import { type PcmAudio, type TtsBackend, TtsError, type TtsSegment } from './backend.js';
-import { decodeWav } from './wav.js';
 
 export interface OpenRouterTtsOptions {
   /** API base URL, e.g. `https://openrouter.ai/api/v1` (the backend appends `/audio/speech`). */
@@ -36,7 +36,7 @@ export const FISH_EMOTION_HINTS: Readonly<Record<Emotion, string | undefined>> =
 };
 
 /**
- * OpenRouter speech backend: `POST {url}/audio/speech` (OpenAI-compatible) → a wav clip.
+ * OpenRouter speech backend: `POST {url}/audio/speech` → signed 16-bit little-endian PCM.
  *
  * The cloud replaces IndexTTS on the local GPU. An abort only drops the HTTP request; the
  * provider has no cancel endpoint. The voice is a provider voice id, mapped from the
@@ -62,7 +62,7 @@ export class OpenRouterTtsBackend implements TtsBackend {
     const body: Record<string, unknown> = {
       model: this.#opts.model,
       input: hint ? `[${hint}] ${segment.text}` : segment.text,
-      response_format: 'wav',
+      response_format: 'pcm',
     };
     if (this.#opts.voice !== undefined) body.voice = this.#opts.voice;
     try {
@@ -80,7 +80,20 @@ export class OpenRouterTtsBackend implements TtsBackend {
       }
       const bytes = new Uint8Array(await res.arrayBuffer());
       try {
-        return decodeWav(bytes);
+        // OpenRouter includes the model's native rate/channels in Content-Type. Fish
+        // returns 44100 Hz; assuming 24000 Hz would change the voice pitch and speed.
+        const type = new MIMEType(res.headers.get('content-type') ?? '');
+        const sampleRate = Number(type.params.get('rate'));
+        const channels = Number(type.params.get('channels'));
+        if (type.essence !== 'audio/pcm' || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000
+          || !Number.isInteger(channels) || channels < 1 || channels > 8
+          || bytes.length === 0 || bytes.length % (2 * channels) !== 0) {
+          throw new Error('Invalid PCM format, metadata or frame length');
+        }
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const samples = new Int16Array(bytes.length / 2);
+        for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true);
+        return { samples, sampleRate, channels };
       } catch (error) {
         throw new TtsError('bad_response', `OpenRouter TTS returned undecodable audio (${res.headers.get('content-type')})`, {
           cause: error,

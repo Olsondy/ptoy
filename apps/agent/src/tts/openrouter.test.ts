@@ -5,11 +5,11 @@ import { loadConversationConfig } from '../config.js';
 import { TtsError } from './backend.js';
 import { createTtsBackend } from './index.js';
 import { OpenRouterTtsBackend, type OpenRouterTtsOptions } from './openrouter.js';
-import { encodeWav } from './wav.js';
 
 initializeLogger({ pretty: false, level: 'silent' });
 
-const CLIP = encodeWav({ samples: Int16Array.from([0, 1000, -1000, 0]), sampleRate: 44100, channels: 1 });
+const CLIP = Buffer.from([0, 0, 0xe8, 0x03, 0x18, 0xfc, 0, 0]);
+const PCM_TYPE = 'audio/pcm;rate=44100;channels=1';
 
 let server: FakeServer | undefined;
 afterEach(async () => {
@@ -19,7 +19,7 @@ afterEach(async () => {
 
 async function setup(
   respond: (req: FakeRequest, res: Parameters<Parameters<typeof startFakeServer>[0]>[1]) => void | Promise<void> = (_req, res) => {
-    res.writeHead(200, { 'Content-Type': 'audio/wav' });
+    res.writeHead(200, { 'Content-Type': PCM_TYPE });
     res.end(CLIP);
   },
   opts: Partial<OpenRouterTtsOptions> = {},
@@ -45,13 +45,13 @@ const never = () => new AbortController().signal;
 const failure = (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e as TtsError);
 
 describe('OpenRouter TTS backend', () => {
-  it('asks for wav with the key, model and voice, and decodes the clip', async () => {
+  it('requests supported PCM and preserves signed samples and the provider native rate', async () => {
     const { backend, calls } = await setup(undefined, { voice: 'fish-voice-1' });
     const audio = await backend.synthesize({ text: '你好呀。', emotion: '平静' }, never());
     expect(calls).toEqual([
       {
         auth: 'Bearer sk-or-test',
-        body: { model: 'fish-audio/s2.1-pro', input: '你好呀。', response_format: 'wav', voice: 'fish-voice-1' },
+        body: { model: 'fish-audio/s2.1-pro', input: '你好呀。', response_format: 'pcm', voice: 'fish-voice-1' },
       },
     ]);
     expect(audio).toMatchObject({ sampleRate: 44100, channels: 1 });
@@ -89,13 +89,39 @@ describe('OpenRouter TTS backend', () => {
     expect(error?.message).toContain('Insufficient credits');
   });
 
-  it('reports non-wav audio as a bad response', async () => {
+  it('reports unexpected compressed audio as a bad response', async () => {
     const { backend } = await setup((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'audio/mpeg' });
-      res.end(Buffer.from('ID3 not a wav'));
+      res.end(Buffer.from('ID3 compressed audio'));
     });
     const error = await failure(backend.synthesize({ text: '嗯。', emotion: '平静' }, never()));
     expect(error).toMatchObject({ kind: 'bad_response' });
+  });
+
+  it('uses declared channel count and sample rate instead of assuming a fixed model format', async () => {
+    const { backend } = await setup((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'audio/pcm; rate="24000"; channels=2' });
+      res.end(CLIP);
+    });
+    const audio = await backend.synthesize({ text: '你好。', emotion: '平静' }, never());
+    expect(audio).toMatchObject({ sampleRate: 24000, channels: 2 });
+    expect(Array.from(audio.samples)).toEqual([0, 1000, -1000, 0]);
+  });
+
+  it.each([
+    ['audio/pcm', CLIP],
+    ['audio/pcm;rate=0;channels=1', CLIP],
+    ['audio/pcm;rate=44100;channels=1.5', CLIP],
+    [PCM_TYPE, Buffer.alloc(0)],
+    [PCM_TYPE, CLIP.subarray(0, 3)],
+    ['audio/pcm;rate=44100;channels=2', CLIP.subarray(0, 6)],
+  ])('rejects missing/invalid PCM metadata or incomplete frames: %s', async (contentType, bytes) => {
+    const { backend } = await setup((_req, res) => {
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(bytes);
+    });
+    expect(await failure(backend.synthesize({ text: '嗯。', emotion: '平静' }, never())))
+      .toMatchObject({ kind: 'bad_response' });
   });
 
   it('times out, and an abort rejects with the abort reason', async () => {
@@ -131,7 +157,7 @@ describe('OpenRouter TTS config', () => {
     });
     server = await startFakeServer((req, res) => {
       const body = JSON.parse(req.body.toString()) as { voice?: string };
-      res.writeHead(body.voice === 'def' ? 200 : 400);
+      res.writeHead(body.voice === 'def' ? 200 : 400, { 'Content-Type': PCM_TYPE });
       res.end(body.voice === 'def' ? CLIP : undefined);
     });
     const backend = createTtsBackend({ ...config.tts, url: server.url } as typeof config.tts, 'zhixin');

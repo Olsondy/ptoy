@@ -103,7 +103,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .call-header {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 44px;
 }
@@ -117,7 +117,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .character-link-feedback p { margin: 0; }
 .character-link-url { display: block; margin-top: 8px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
 .call-welcome h1 { overflow-wrap: anywhere; }
-.call-status { display: flex; align-items: center; gap: 8px; font-size: var(--call-type-label); line-height: 1.5; color: var(--muted-foreground); }
+.call-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--call-type-label); line-height: 1.5; color: var(--muted-foreground); }
 .dot { width: 5px; height: 5px; border-radius: 50%; background: #777983; }
 .dot-connecting { background: #d5b47b; }
 .call-status[data-status="connected"] { color: var(--call-connected); }
@@ -133,6 +133,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   gap: 20px;
   padding-block: 24px 8px;
 }
+.call-orb-status { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .orb-slot { position: relative; width: min(60vw, 34dvh, 300px); min-width: 160px; aspect-ratio: 1; }
 /* Preserve the existing renderer's halo beyond its layout slot. */
 .orb-canvas { position: absolute; inset: -22%; width: 144%; height: 144%; pointer-events: none; }
@@ -238,7 +239,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
     gap: 20px;
     padding-block: 12px;
   }
-  .orb-slot { justify-self: center; }
+  .call-orb-status { justify-self: center; }
   .call-conversation { min-height: 0; }
   .call-welcome { padding-block: 12px; }
 }
@@ -261,8 +262,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .invite-gate-submit { min-height: 48px; gap: 10px; }
 .invite-gate-help { margin-top: 16px; text-align: center; font-size: var(--call-type-label); }
 @media (max-width: 480px) {
-  .call-header { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 4px; }
-  .call-header > .call-status { grid-row: 2; grid-column: 1 / -1; justify-self: center; margin: 0; }
   .call-header-actions { gap: 0; }
   .invite-gate { padding-inline: 20px; }
 }

@@ -54,9 +54,6 @@ export function App() {
         <main className="call">
           <header className="call-header">
             <span className="call-wordmark" aria-label="ptoy">ptoy<span>.</span></span>
-            <p className="call-status" data-testid="call-status" data-status={call.status} aria-live="polite">
-              <span className={`dot dot-${call.status}`} aria-hidden="true" />{STATUS_LABEL[call.status]}
-            </p>
             <div className="call-header-actions">
               {!characters.locked && <CharacterPicker {...characters} disabled={inCall} />}
               {!characters.locked && characters.selectedId && <CharacterLinkButton key={characters.selectedId}
@@ -71,7 +68,12 @@ export function App() {
             </div>
           </header>
           <section className="call-stage" aria-label="语音通话">
-            <CallOrb room={call.room} status={call.status} />
+            <div className="call-orb-status">
+              <CallOrb room={call.room} status={call.status} />
+              <p className="call-status" data-testid="call-status" data-status={call.status} aria-live="polite">
+                <span className={`dot dot-${call.status}`} aria-hidden="true" />{STATUS_LABEL[call.status]}
+              </p>
+            </div>
             <div className="call-conversation">
               {call.room ? <CallTranscript key={call.room.name} visible={captions} characterName={characterName} /> : (
                 <div className="call-welcome">
