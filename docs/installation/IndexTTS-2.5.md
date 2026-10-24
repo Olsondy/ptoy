@@ -114,10 +114,10 @@ finally {
 
 `start-local.ps1` 内部需要在代码目录运行 `webui.py`，应使用 `Push-Location -LiteralPath $PSScriptRoot`，并把后续启动逻辑放在 `try { ... } finally { Pop-Location }` 中，避免直接使用 `Set-Location` 后不恢复目录。
 
-参考音频原件为 `F:\ALL\vo-10s.wav`；启动脚本使用的副本是：
+参考音频放在音色目录，每个音色一个 `<id>.wav`：
 
 ```text
-D:\Development\IndexTTS\prompts\vo-10s.wav
+D:\Development\IndexTTS\prompts\voices\<id>.wav
 ```
 
 保持音频文件可读。用 WebUI 时，ptoy Agent 还要在 `.env` 设置自己的 `TTS_REF_AUDIO`（所有角色共用这一个音色）；用下面的 API 服务时音色由服务端的音色目录提供，Agent 只按角色传音色 id。

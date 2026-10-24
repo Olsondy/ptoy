@@ -66,7 +66,7 @@ conda create --prefix 'D:\Resources\MyWorkspace\ai\conda\envs\sensevoice' python
 
 ```powershell
 Invoke-RestMethod 'http://127.0.0.1:8001/health' -NoProxy
-curl.exe --noproxy "*" 'http://127.0.0.1:8001/v1/audio/transcriptions' -F 'file=@D:\Development\IndexTTS\prompts\vo-10s.wav' -F 'language=zh' -F 'model=SenseVoiceSmall'
+curl.exe --noproxy "*" 'http://127.0.0.1:8001/v1/audio/transcriptions' -F 'file=@D:\Development\IndexTTS\prompts\voices\<id>.wav' -F 'language=zh' -F 'model=SenseVoiceSmall'
 ```
 
 确认设备为 CPU、返回 `text`、`raw_text` 和 `elapsed_seconds`，且识别内容与音频一致。GPU 模式的历史耗时不是 CPU 的验收数据；新机器安装和 CPU 推理要分别验证。

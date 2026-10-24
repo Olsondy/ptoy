@@ -167,6 +167,18 @@ describe('SenseVoiceSTT result', () => {
     expect(asrMetadataOf(bare)).toMatchObject({ emotion: 'unknown', events: [], inferenceMs: 0 });
   });
 
+  it('reads a hosted ASR\'s inline cues (Fish Audio) and strips them and the speaker marker', async () => {
+    handler = (_req, res) => json(res, 200, { text: '<|speaker:0|>[开心][laughter]哈哈，今天真是太开心了。' });
+    const ev = await makeStt().recognize(toneFrame());
+    expect(ev.alternatives?.[0]?.text).toBe('哈哈，今天真是太开心了。');
+    expect(asrMetadataOf(ev)).toMatchObject({ emotion: 'happy', events: ['laughter'] });
+
+    handler = (_req, res) => json(res, 200, { text: '<|speaker:0|> [frustrated, sighing]我都说了三遍了 [嘟囔]' });
+    const angry = await makeStt().recognize(toneFrame());
+    expect(angry.alternatives?.[0]?.text).toBe('我都说了三遍了');
+    expect(asrMetadataOf(angry)).toMatchObject({ emotion: 'angry', events: [] });
+  });
+
   it('strips any SenseVoice tags left in text', async () => {
     handler = (_req, res) => json(res, 200, { text: '<|zh|><|NEUTRAL|>你好' });
     const ev = await makeStt().recognize(toneFrame());

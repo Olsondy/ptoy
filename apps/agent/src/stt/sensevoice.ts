@@ -178,14 +178,59 @@ function parseTags(raw: string): { emotion: AsrEmotion; events: AsrEvent[] } {
   return { emotion, events };
 }
 
+/** Bracketed delivery cue a hosted ASR keeps inline in `text`, e.g. Fish Audio's `[高兴]` or `[laughter]`. */
+const CUE = /\[([^[\]]{1,24})\]/g;
+
+/** Cue keywords → emotion, checked in order (cues are free-form, Chinese or English). */
+const CUE_EMOTIONS: readonly (readonly [RegExp, AsrEmotion])[] = [
+  [/惊喜|惊讶|吃惊|震惊|surpris|amaz|astonish|shock/i, 'surprised'],
+  [/高兴|开心|快乐|兴奋|喜悦|愉快|欢快|happy|joy|excit|cheer|delight/i, 'happy'],
+  [/难过|伤心|悲伤|委屈|沮丧|失落|低落|sad|upset|sorrow|depress|disappoint/i, 'sad'],
+  [/生气|愤怒|恼火|不耐烦|烦躁|angry|anger|annoy|frustrat|irritat|furious/i, 'angry'],
+  [/害怕|恐惧|紧张|担心|焦虑|fear|afraid|scared|nervous|anxious|worr/i, 'fearful'],
+  [/厌恶|恶心|嫌弃|disgust/i, 'disgusted'],
+  [/平静|中性|neutral|calm/i, 'neutral'],
+];
+
+/** Cue keywords → audio event. */
+const CUE_EVENTS: readonly (readonly [RegExp, AsrEvent])[] = [
+  [/笑|laugh|giggl|chuckl/i, 'laughter'],
+  [/哭|啜泣|抽泣|cry|sob/i, 'cry'],
+  [/咳|cough/i, 'cough'],
+  [/喷嚏|sneez/i, 'sneeze'],
+  [/呼吸|喘|叹气|breath|sigh|gasp/i, 'breath'],
+  [/鼓掌|掌声|applau|clap/i, 'applause'],
+  [/音乐|music|bgm/i, 'bgm'],
+];
+
+/**
+ * Reads emotion and events from bracketed cues (first emotion cue wins, like SenseVoice's single tag).
+ * Unrecognized cues are dropped.
+ */
+function parseCues(text: string): { emotion: AsrEmotion; events: AsrEvent[] } {
+  let emotion: AsrEmotion = 'unknown';
+  const events: AsrEvent[] = [];
+  for (const [, cue = ''] of text.matchAll(CUE)) {
+    const cueEmotion = CUE_EMOTIONS.find(([pattern]) => pattern.test(cue))?.[1];
+    if (cueEmotion !== undefined) {
+      if (emotion === 'unknown') emotion = cueEmotion;
+      continue;
+    }
+    const event = CUE_EVENTS.find(([pattern]) => pattern.test(cue))?.[1];
+    if (event !== undefined && !events.includes(event)) events.push(event);
+  }
+  return { emotion, events };
+}
+
 function parseResult(body: unknown): { text: string; emotion: AsrEmotion; events: AsrEvent[]; durationMs: number } {
   if (!body || typeof body !== 'object') throw new AsrError('bad_response', 'ASR response is not a JSON object');
   const b = body as Record<string, unknown>;
   if (typeof b.text !== 'string') throw new AsrError('bad_response', 'ASR response has no string `text`');
   const raw = Array.isArray(b.raw_text) ? b.raw_text.filter((r) => typeof r === 'string').join('') : b.raw_text;
-  const { emotion, events } = typeof raw === 'string' ? parseTags(raw) : { emotion: 'unknown' as const, events: [] };
+  // SenseVoice tags its `raw_text`; a hosted ASR without one may put cues in `text` (Fish Audio transcribe-1-pro).
+  const { emotion, events } = typeof raw === 'string' ? parseTags(raw) : parseCues(b.text);
   const durationMs = typeof b.elapsed_seconds === 'number' ? Math.round(b.elapsed_seconds * 1000) : 0;
-  return { text: b.text.replace(TAG, '').trim(), emotion, events, durationMs };
+  return { text: b.text.replace(TAG, '').replace(CUE, '').trim(), emotion, events, durationMs };
 }
 
 async function readErrorBody(res: Response): Promise<{ code?: string; message?: string }> {
@@ -205,7 +250,8 @@ async function readErrorBody(res: Response): Promise<{ code?: string; message?: 
  * Non-streaming STT backed by a SenseVoice ASR service with an OpenAI-compatible
  * `POST /v1/audio/transcriptions` (multipart `file`, `response_format=json` → `{ text, raw_text, elapsed_seconds }`).
  * With `apiKey` + `model` the same request goes to a hosted endpoint (OpenRouter, `ASR_URL=https://openrouter.ai/api`),
- * which answers `{ text }`: no emotion/event tags (emotion `unknown`), no inference time.
+ * which answers `{ text }` and no inference time. Emotion/events then come from bracketed cues in `text`
+ * (`fish-audio/transcribe-1-pro`: `<|speaker:0|>[高兴]…`); models without cues give emotion `unknown`.
  *
  * It recognizes one whole utterance per call, so `AgentSession` wraps it in `stt.StreamAdapter`
  * with the session's VAD: the VAD cuts utterances, each one becomes one FINAL_TRANSCRIPT.
