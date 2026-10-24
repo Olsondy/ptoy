@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { loadAccessConfig, type AccessConfig } from './access/config.js';
+import { loadModelChecksConfig, type ModelChecksConfig } from './access/availability.js';
 
 const livekitSchema = z.object({
   LIVEKIT_URL: z.string().url(),
@@ -27,11 +29,14 @@ const tokenServerSchema = livekitSchema.extend({
   TOKEN_SERVER_HOST: z.string().default('0.0.0.0'),
   TOKEN_SERVER_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   TOKEN_SERVER_CORS_ORIGIN: z.string().default('*'),
-  TOKEN_TTL: z.string().default('1h'),
+  TOKEN_TTL: z.string().default('2m'),
   CHARACTER_LINK_SECRET: z.string().min(32).optional(),
 });
 
 export interface TokenServerConfig {
+  readonly access: AccessConfig;
+  readonly modelChecks: ModelChecksConfig;
+  readonly livekitUrl: string;
   readonly livekitApiKey: string;
   readonly livekitApiSecret: string;
   /** URL the browser connects to (may differ from the agent's LIVEKIT_URL). */
@@ -52,6 +57,9 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
   }
   const e = parsed.data;
   return {
+    access: loadAccessConfig(env),
+    modelChecks: loadModelChecksConfig(env),
+    livekitUrl: e.LIVEKIT_URL,
     livekitApiKey: e.LIVEKIT_API_KEY,
     livekitApiSecret: e.LIVEKIT_API_SECRET,
     livekitPublicUrl: e.LIVEKIT_PUBLIC_URL ?? e.LIVEKIT_URL,
@@ -62,6 +70,14 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
     characterLinkSecret: e.CHARACTER_LINK_SECRET ?? e.LIVEKIT_API_SECRET,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
   };
+}
+
+export function loadAgentHealthConfig(env: NodeJS.ProcessEnv = process.env) {
+  const e = z.object({
+    AGENT_HEALTH_HOST: z.string().min(1).default('127.0.0.1'),
+    AGENT_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(8081),
+  }).parse(env);
+  return { host: e.AGENT_HEALTH_HOST, port: e.AGENT_HEALTH_PORT };
 }
 
 const callSchema = z.object({

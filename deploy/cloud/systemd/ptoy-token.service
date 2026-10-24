@@ -1,0 +1,28 @@
+# ptoy-managed: cloud-v1
+[Unit]
+Description=ptoy token and invitation service
+After=network-online.target ptoy-livekit.service
+Wants=network-online.target ptoy-livekit.service
+
+[Service]
+Type=simple
+User=ptoy
+Group=ptoy
+EnvironmentFile=/etc/ptoy/app.env
+Environment=HOME=/var/lib/ptoy
+Environment=XDG_CACHE_HOME=/var/cache/ptoy
+WorkingDirectory=/opt/ptoy/current/apps/agent
+ExecStart=/usr/local/lib/ptoy/run-service.sh token
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=infinity
+SendSIGKILL=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ptoy /var/cache/ptoy
+
+[Install]
+WantedBy=multi-user.target

@@ -31,7 +31,7 @@ export interface CharacterPick {
 }
 
 /** The character list from the token server, with the last pick remembered in this browser. */
-export function useCharacters(): CharacterPick {
+export function useCharacters(enabled = true): CharacterPick {
   const [options, setOptions] = useState<readonly CharacterOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [characterLink] = useState(() => {
@@ -43,6 +43,8 @@ export function useCharacters(): CharacterPick {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
+    if (!enabled) { setOptions([]); setSelectedId(undefined); setLoading(true); setError(undefined); return; }
+    setLoading(true); setError(undefined);
     const abort = new AbortController();
     const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]);
     fetchCharacters(signal, characterLink)
@@ -64,7 +66,7 @@ export function useCharacters(): CharacterPick {
       })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [characterLink, locked]);
+  }, [characterLink, locked, enabled]);
 
   const select = (id: string) => {
     if (locked || !options.some((character) => character.id === id)) return;

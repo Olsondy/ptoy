@@ -1,0 +1,20 @@
+# Replace both example domains with APP_DOMAIN / RTC_DOMAIN from settings.
+# For a server without an existing web entry. Do not overwrite other sites.
+voice.example.com {
+	@private path /internal /internal/* /.git /.git/* /.env /.env.*
+	respond @private 404
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8787
+	}
+
+	handle {
+		root * /var/www/ptoy/current
+		header Cache-Control "no-cache"
+		file_server
+	}
+}
+
+rtc.example.com {
+	reverse_proxy 127.0.0.1:7880
+}

@@ -1,0 +1,6 @@
+# Include INSIDE a NEW RTC_DOMAIN TLS Apache-compatible vhost managed by LSWS.
+# This is vhost configuration, NOT .htaccess. It is not OpenLiteSpeed syntax.
+RewriteEngine On
+RewriteRule ^ - [E=Cache-Control:no-cache]
+RewriteRule ^/?(.*)$ http://127.0.0.1:7880/$1 [P,L]
+ProxyPass / ws://127.0.0.1:7880/

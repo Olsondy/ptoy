@@ -45,6 +45,9 @@
   --input: #ffffff20;
   --ring: #aaaab3;
   --radius: 0.75rem;
+  --invite-title-size: 1.75rem;
+  --invite-field: #191a1d;
+  --invite-review-background: #151618;
 }
 
 @theme inline {
@@ -141,6 +144,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .call-footer { width: min(100%, 520px); display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 8px; }
 .call-error-slot { min-height: 20px; width: 100%; }
 .call-error { color: var(--destructive); text-align: center; font-size: var(--call-type-secondary); line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; }
+.call-notice { color: var(--muted-foreground); text-align: center; font-size: var(--call-type-secondary); line-height: 1.7; }
 .call-controls {
   display: flex;
   align-items: center;
@@ -240,4 +244,25 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Invitation access uses the existing semantic palette and input/button primitives. */
+.invite-gate { display: flex; flex-direction: column; min-height: 100dvh; padding: max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
+.invite-gate-header { min-height: 44px; display: flex; align-items: center; }
+.invite-gate-content { width: min(100%, 360px); margin: auto; padding-block: 28px; display: flex; flex-direction: column; align-items: center; }
+.invite-gate-content .orb-slot { width: min(48vw, 24dvh, 190px); min-width: 120px; margin-bottom: 24px; }
+.invite-gate-copy { text-align: center; }
+.invite-gate-copy h1 { font-size: var(--invite-title-size); font-weight: 500; line-height: 1.4; margin: 0 0 12px; }
+.invite-gate-copy p, .invite-gate-help { color: var(--muted-foreground); font-size: var(--call-type-secondary); line-height: 1.7; }
+.invite-gate-form { width: 100%; margin-top: 28px; display: flex; flex-direction: column; }
+.invite-gate-form label { font-size: var(--call-type-secondary); margin-bottom: 8px; }
+.invite-gate-form input { height: 48px; background: var(--invite-field); font-size: 16px; letter-spacing: .05em; }
+.invite-gate-feedback { min-height: 36px; padding-block: 8px; color: var(--destructive); font-size: var(--call-type-secondary); line-height: 1.6; overflow-wrap: anywhere; }
+.invite-gate-submit { min-height: 48px; gap: 10px; }
+.invite-gate-help { margin-top: 16px; text-align: center; font-size: var(--call-type-label); }
+@media (max-width: 480px) {
+  .call-header { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 4px; }
+  .call-header > .call-status { grid-row: 2; grid-column: 1 / -1; justify-self: center; margin: 0; }
+  .call-header-actions { gap: 0; }
+  .invite-gate { padding-inline: 20px; }
 }

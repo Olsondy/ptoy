@@ -1,0 +1,37 @@
+# New ptoy RTC vhost only. Map RTC_DOMAIN on the existing HTTPS listener.
+# Its certificate belongs to RTC_DOMAIN; the backend uses loopback HTTP/WS.
+vhDomain                  RTC_DOMAIN
+
+extprocessor ptoy_livekit {
+  type                    proxy
+  address                 127.0.0.1:7880
+  maxConns                100
+  initTimeout             60
+  retryTimeout            0
+  respBuffer              0
+}
+
+# Non-upgrade requests, including LiveKit connection validation.
+context / {
+  type                    proxy
+  handler                 ptoy_livekit
+  addDefaultCharset       off
+}
+
+# WebSocket upgrade requests use this route; HTTP context alone is insufficient.
+websocket / {
+  address                 127.0.0.1:7880
+}
+
+rewrite {
+  enable                  1
+  autoLoadHtaccess         0
+  rules                   <<<END_rules
+RewriteRule ^ - [E=Cache-Control:no-cache]
+END_rules
+}
+
+module cache {
+  enableCache             0
+  enablePrivateCache      0
+}
