@@ -32,7 +32,7 @@ class FakeEngine:
         self.active = 0
         self.max_active = 0
 
-    def synthesize(self, text, emo_vector, emo_alpha, should_abort, generation=None, voice=None):
+    def synthesize(self, text, emo_vector, emo_alpha, should_abort, generation=None, voice=None, speed=1.0):
         self.loaded_voice = voice or self.default_voice
         with self.lock:
             self.active += 1
@@ -43,6 +43,8 @@ class FakeEngine:
                 call["generation"] = generation
             if voice is not None:
                 call["voice"] = voice
+            if speed != 1.0:
+                call["speed"] = speed
             self.calls.append(call)
             self.started.set()
             if self.gated:
@@ -129,6 +131,31 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(np.frombuffer(res.content, dtype="<i2")), RATE // 100 * 4)  # ramp has no silence
 
+    def test_per_request_speed_reaches_the_engine(self):
+        engine = FakeEngine()
+        c = self.client(engine)
+        self.assertEqual(c.post("/tts", json={"text": "嗯。", "speed": 1.12}).status_code, 200)
+        c.post("/tts", json={"text": "嗯。"})
+        self.assertEqual(engine.calls[0]["speed"], 1.12)
+        self.assertNotIn("speed", engine.calls[1])
+
+    def test_per_request_max_pause_caps_inner_pauses_and_trailing_silence(self):
+        class PausyEngine(FakeEngine):
+            def synthesize(self, *args, **kwargs):
+                super().synthesize(*args, **kwargs)
+                voice, gap = np.full(RATE // 5, 8000, np.int16), np.zeros(RATE, np.int16)  # 200 ms / 1 s
+                return np.concatenate([voice, gap, voice, gap])
+
+        from pauses import PauseLimits
+
+        c = self.client(PausyEngine(), pauses=PauseLimits(lead_ms=30, trail_ms=250, max_pause_ms=400))
+        ms = lambda res: len(np.frombuffer(res.content, dtype="<i2")) * 1000 // RATE
+        # 10 ms frames do not divide 22.05 kHz evenly: allow a couple of frames
+        self.assertAlmostEqual(ms(c.post("/tts", json={"text": "嗯。"})), 200 + 400 + 200 + 250, delta=20)
+        self.assertAlmostEqual(
+            ms(c.post("/tts", json={"text": "嗯。", "max_pause_ms": 300})), 200 + 300 + 200 + 180, delta=20,
+        )
+
     def test_generation_overrides_reach_the_engine(self):
         engine = FakeEngine()
         c = self.client(engine)
@@ -169,6 +196,8 @@ class HttpTest(unittest.TestCase):
             {"text": "你好", "emo_alpha": 1.5},
             {"text": "你好", "generation": {"temperature": 0}},
             {"text": "你好", "generation": {"seed": 1}},
+            {"text": "你好", "speed": 3},
+            {"text": "你好", "max_pause_ms": 50},
             {"text": "这句话太长了"},
         ]
         for body in bad:
@@ -190,6 +219,7 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(res.json(), {
             "status": "ok", "queued": 0, "running": None, "model": "fake", "sample_rate": RATE,
             "generation_overrides": ["temperature", "top_p", "top_k", "repetition_penalty"],
+            "request_tuning": ["speed", "max_pause_ms"],
         })
 
     def test_cancel_running_request_over_http(self):

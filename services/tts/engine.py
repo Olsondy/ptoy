@@ -413,7 +413,7 @@ class IndexTtsEngine:
 
     def _infer_kwargs(
         self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, output_path: Optional[str],
-        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None, speed: float = 1.0,
     ) -> dict[str, Any]:
         vec = None
         if emo_vector is not None:
@@ -437,7 +437,11 @@ class IndexTtsEngine:
         )
         if self.cfg.version == "2.5":
             kwargs["lang"] = self.cfg.language
-            kwargs["duration_factor"] = self.cfg.duration_factor
+            # duration_factor scales the generated length: speaking faster is a shorter one.
+            kwargs["duration_factor"] = self.cfg.duration_factor / speed
+        elif speed != 1.0 and not getattr(self, "_warned_speed", False):
+            log.warning("IndexTTS2 v%s has no duration_factor; per-request speed ignored", self.cfg.version)
+            self._warned_speed = True
         top_k = kwargs.get("top_k")
         if isinstance(top_k, int) and top_k <= 0:
             kwargs["top_k"] = None  # same as gen_single()
@@ -449,7 +453,7 @@ class IndexTtsEngine:
 
     def synthesize(
         self, text: str, emo_vector: Optional[list[float]], emo_alpha: float, should_abort: Callable[[], bool],
-        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None,
+        generation: Optional[dict[str, Any]] = None, voice: Optional[str] = None, speed: float = 1.0,
     ) -> np.ndarray:
         voice = voice or self.cfg.default_voice
         if voice not in self.cfg.voices:
@@ -459,7 +463,7 @@ class IndexTtsEngine:
         self.loaded_voice = voice
         try:
             if self.output_mode == "memory":
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None, generation, voice))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, None, generation, voice, speed))
                 parsed = pcm_from_output(output)
                 if parsed is None:
                     raise _NotInMemory(type(output).__name__)
@@ -467,7 +471,7 @@ class IndexTtsEngine:
                 return pcm
             path = os.path.join(self._tmpdir, f"{uuid.uuid4().hex}.wav")
             try:
-                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path, generation, voice))
+                output = self._infer(**self._infer_kwargs(text, emo_vector, emo_alpha, path, generation, voice, speed))
                 if not os.path.isfile(path) and isinstance(output, str) and os.path.isfile(output):
                     path = output
                 self.sample_rate, pcm = read_wav(path)

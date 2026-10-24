@@ -19,7 +19,8 @@
       --sweep temperature=0.8,0.6,0.4 --sweep top_p=0.8,0.6
   python bench/compare_ref_audio.py --backend fastapi --tts-url http://192.168.31.82:8002 --voices chunqing wenrou
   只要整段版（省一半时间）：加 --no-segmented；自定义台词：--texts lines.txt（一行一条）
-  --sweep 可重复，多个参数取笛卡尔积，每种组合一列；可扫 temperature / top_p / top_k / repetition_penalty
+  --sweep 可重复，多个参数取笛卡尔积，每种组合一列；可扫 temperature / top_p / top_k / repetition_penalty，
+  fastapi 还可扫 speed / max_pause_ms（按角色的语速和停顿上限，ADR 0009）
 
 结果写到 --out（默认 bench/out/ref-ab/），用浏览器打开其中的 index.html 试听。
 情感跟随参考音频（与 Agent 的 TTS_EMOTION_CONTROL=reference 一致），未扫的参数用后端自己的默认值。
@@ -40,7 +41,9 @@ import uuid
 import wave
 from pathlib import Path
 
-SWEEPABLE = {"temperature": float, "top_p": float, "top_k": int, "repetition_penalty": float}
+# 采样参数走 /tts 的 `generation`；语速和停顿上限是 /tts 的顶层字段（ADR 0009），只有 fastapi 后端支持
+REQUEST_TUNING = {"speed": float, "max_pause_ms": int}
+SWEEPABLE = {"temperature": float, "top_p": float, "top_k": int, "repetition_penalty": float, **REQUEST_TUNING}
 
 API_NAME = "gen_single"
 EMO_SAME_AS_REFERENCE = "与音色参考音频相同"
@@ -172,8 +175,10 @@ class FastApiTts:
         body = {"text": text, "emotion": "平静"}
         if voice:
             body["voice"] = voice
-        if generation:
-            body["generation"] = generation
+        sampling = {k: v for k, v in generation.items() if k not in REQUEST_TUNING}
+        body.update({k: v for k, v in generation.items() if k in REQUEST_TUNING})
+        if sampling:
+            body["generation"] = sampling
         req = urllib.request.Request(
             f"{self.base}/tts", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"},
         )
@@ -308,10 +313,11 @@ def main():
         if args.refs:
             sys.exit("fastapi 后端用服务端的音色（--voices），不接受 --refs")
         tts = FastApiTts(args.tts_url)
-        supported = set(tts.health.get("generation_overrides", []))
+        supported = set(tts.health.get("generation_overrides", [])) | set(tts.health.get("request_tuning", []))
         unsupported = {k for g in variants for k in g} - supported
         if unsupported:
-            sys.exit(f"服务不支持按请求覆盖 {sorted(unsupported)}（/health 的 generation_overrides），先更新并重启 services/tts")
+            sys.exit(f"服务不支持按请求设置 {sorted(unsupported)}（/health 的 generation_overrides / request_tuning），"
+                     "先更新并重启 services/tts")
         available = tts.health.get("voices", [])
         voices = args.voices or [tts.health.get("default_voice", "server")]
         unknown = set(args.voices or []) - set(available)

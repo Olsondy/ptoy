@@ -18,12 +18,21 @@ export interface CharacterSummary {
   readonly description: string;
 }
 
+/** Per-character TTS tuning from the front matter (ADR 0009); sent with every synthesis request. */
+export interface TtsTuning {
+  /** Speaking-rate multiplier (`tts_speed`), 1 = the model's own pace. */
+  readonly speed: number;
+  /** Inner-pause cap in ms (`tts_max_pause_ms`); undefined = the TTS service's setting. */
+  readonly maxPauseMs?: number;
+}
+
 export interface Character extends CharacterSummary {
   /**
    * TTS voice id: a speaker reference of `services/tts` (`<voice>.wav` in its `TTS_VOICES_DIR`)
    * and the filler set `assets/fillers/<voice>/` (ADR 0008).
    */
   readonly voice: string;
+  readonly tts: TtsTuning;
   /** Full system prompt: the persona followed by the shared call rules. */
   readonly instructions: string;
 }
@@ -52,9 +61,30 @@ export class CharacterCatalog {
   }
 }
 
+const SPEED_RANGE = [0.8, 1.3] as const;
+const MAX_PAUSE_RANGE = [100, 1000] as const;
+
+function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTuning {
+  const number = (key: string, [min, max]: readonly [number, number], integer: boolean): number | undefined => {
+    const raw = fields.get(key);
+    if (raw === undefined || raw === '') return undefined;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+      const kind = integer ? 'an integer' : 'a number';
+      throw new Error(`Character "${id}" has \`${key}: ${raw}\`; expected ${kind} in [${min}, ${max}]`);
+    }
+    return value;
+  };
+  const maxPauseMs = number('tts_max_pause_ms', MAX_PAUSE_RANGE, true);
+  return { speed: number('tts_speed', SPEED_RANGE, false) ?? 1, ...(maxPauseMs !== undefined && { maxPauseMs }) };
+}
+
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
-/** `---\nname: …\ndescription: …\nvoice: …\n---\n<persona>`; only flat `key: value` lines are supported. */
+/**
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n---\n<persona>`;
+ * only flat `key: value` lines are supported.
+ */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
   const normalized = text.replace(/\r\n/g, '\n');
   const match = FRONT_MATTER.exec(normalized);
@@ -67,6 +97,7 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
   if (!name) throw new Error(`Character "${id}" has no \`name:\` in its front matter`);
   const voice = fields.get('voice');
   if (!voice) throw new Error(`Character "${id}" has no \`voice:\` in its front matter`);
+  const tts = parseTtsTuning(id, fields);
   const persona = normalized.slice(match?.[0].length ?? 0).trim();
   if (!persona) throw new Error(`Character "${id}" has an empty persona`);
   const shared = rules.replace(/\r\n/g, '\n').trim();
@@ -75,6 +106,7 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
     name,
     description: fields.get('description') ?? '',
     voice,
+    tts,
     instructions: shared ? `${persona}\n\n${shared}` : persona,
   };
 }

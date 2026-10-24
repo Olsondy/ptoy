@@ -13,8 +13,20 @@ describe('parseCharacterFile', () => {
       name: '小悠',
       description: '老朋友',
       voice: 'chunqing',
+      tts: { speed: 1 },
       instructions: '你叫小悠。\n\n通话规则',
     });
+  });
+
+  it('reads the optional TTS tuning and rejects values out of range', () => {
+    const file = (extra: string) => `---\nname: 小悠\nvoice: v\n${extra}\n---\n你叫小悠。`;
+    expect(parseCharacterFile('a', file('tts_speed: 1.06\ntts_max_pause_ms: 300'), 'R').tts).toEqual({
+      speed: 1.06,
+      maxPauseMs: 300,
+    });
+    for (const bad of ['tts_speed: 快', 'tts_speed: 2', 'tts_max_pause_ms: 30', 'tts_max_pause_ms: 250.5']) {
+      expect(() => parseCharacterFile('x', file(bad), 'R'), bad).toThrow(new RegExp(`"x".*${bad.split(':')[0]}`));
+    }
   });
 
   it('accepts CRLF files (edited on Windows)', () => {
@@ -64,5 +76,15 @@ describe('loadCharacters', () => {
     const catalog = loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou');
     expect(catalog.characters.length).toBeGreaterThanOrEqual(2);
     for (const c of catalog.characters) expect(c.instructions).toContain('情绪标签');
+  });
+
+  it('ships the TTS tuning ADR 0009 picked for each character', () => {
+    const tuning = Object.fromEntries(
+      loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters.map((c) => [c.id, c.tts]),
+    );
+    expect(tuning).toEqual({
+      xiaoyou: { speed: 1.06, maxPauseMs: 300 },
+      zhixia: { speed: 1.12, maxPauseMs: 300 },
+    });
   });
 });

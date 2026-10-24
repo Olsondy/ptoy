@@ -65,6 +65,8 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 - `emotion`：可选，`喜 怒 哀 惧 厌恶 低落 惊喜 平静` 之一。`平静` 或不填 = 情绪跟随音色参考音频；其余映射为 one-hot 情感向量（下标顺序同 `@ptoy/segmenter` 的 `EMOTION_VECTOR_INDEX`），再经 IndexTTS2 `normalize_emo_vec(apply_bias=True)`，与 WebUI「使用情感向量控制」一致
 - `emotion_vector`：可选，8 个 `[0,1]` 的浮点数，和 `emotion` 二选一；全 0 等同跟随参考音频
 - `emo_alpha`：可选，`[0,1]`，默认 `TTS_EMO_ALPHA`
+- `speed`：可选，`[0.5, 2]`，默认 1。语速倍数，`1.06` = 快 6%；换算成 IndexTTS 2.5 的 `duration_factor = TTS_DURATION_FACTOR / speed`（v2 不支持，忽略）。Agent 发角色文件的 `tts_speed`（ADR 0009）
+- `max_pause_ms`：可选，`[100, 2000]`。本次请求的句中停顿上限，段尾静音取它的 0.6 倍；不填用 `TTS_MAX_PAUSE_MS` / `TTS_TRAIL_SILENCE_MS`。Agent 发角色文件的 `tts_max_pause_ms`
 - `generation`：可选，只对本次请求覆盖采样参数 `{ temperature?, top_p?, top_k?, repetition_penalty? }`，不填的用 `TTS_*` 配置值。用于调参（`bench/compare_ref_audio.py --backend fastapi --sweep ...`），Agent 不发
 - `request_id`：可选，用于取消；不填由服务生成
 
@@ -94,7 +96,7 @@ Mac 开发期经局域网访问时，防火墙放行 TCP 8002（替代原来的 
 
 ### `GET /health`
 
-`{ status, queued, running, model, precision, sample_rate, output_mode, voices, default_voice, loaded_voice, diffusion, generation, infer, load_ms, warmup_ms, vram_mib, generation_overrides }`。`loaded_voice` 是模型当前缓存的音色。`generation_overrides` 列出 `generation` 字段可覆盖的参数。
+`{ status, queued, running, model, precision, sample_rate, output_mode, voices, default_voice, loaded_voice, diffusion, generation, infer, load_ms, warmup_ms, vram_mib, generation_overrides, request_tuning }`。`loaded_voice` 是模型当前缓存的音色。`generation_overrides` 列出 `generation` 字段可覆盖的参数。
 
 ## GPU 串行
 

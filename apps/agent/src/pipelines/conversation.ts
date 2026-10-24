@@ -214,14 +214,17 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   // One emotion per reply (its first tag): per-sentence tags switched between the plain reference
   // voice (平静) and emotion-vector synthesis mid-reply, which sounded like the voice changing.
   const tts = new IndexTTS({
-    backend: createTtsBackend(config.tts, character.voice),
+    backend: createTtsBackend(config.tts, character.voice, character.tts),
     sampleRate: config.audioSampleRate,
     segmenter: { emotionScope: 'reply', dropLeadingInterjection: true },
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();
   if (config.tts.backend === 'gradio') {
-    logger.warn({ voice: character.voice }, 'gradio tts speaks every character with TTS_REF_AUDIO');
+    logger.warn(
+      { voice: character.voice, tuning: character.tts },
+      'gradio tts speaks every character with TTS_REF_AUDIO and ignores the per-character speed and pauses',
+    );
   }
   // Fillers in another voice would sound like a second person answering: no set, no fillers.
   let fillerBank: FillerBank | undefined;
@@ -322,6 +325,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     {
       character: character.id,
       voice: character.voice,
+      ttsTuning: character.tts,
       asr: config.asrUrl,
       llm: config.llm.baseUrl,
       model: config.llm.model,
