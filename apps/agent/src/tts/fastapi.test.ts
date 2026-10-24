@@ -205,6 +205,15 @@ describe('TTS_BACKEND=fastapi config', () => {
     expect(createTtsBackend(config.tts).name).toBe('indextts-fastapi');
   });
 
+  it("a character's tts_emo_weight replaces TTS_EMO_WEIGHT as emo_alpha (ADR 0009)", async () => {
+    server = await startFakeTtsFastApi();
+    const config = loadConversationConfig({ TTS_BACKEND: 'fastapi', TTS_FASTAPI_URL: server.url });
+    const tuned = createTtsBackend(config.tts, 'zhixin', { speed: 1.1, emoWeight: 0.3 });
+    await tuned.synthesize({ text: '唉。', emotion: '哀' }, never());
+    await createTtsBackend(config.tts, 'zhixia', { speed: 1 }).synthesize({ text: '唉。', emotion: '哀' }, never());
+    expect(server.calls.map((c) => c.emo_alpha)).toEqual([0.3, 0.6]);
+  });
+
   it('gradio still requires TTS_REF_AUDIO', () => {
     expect(() => loadConversationConfig({ TTS_BACKEND: 'gradio' })).toThrow(/TTS_REF_AUDIO/);
   });

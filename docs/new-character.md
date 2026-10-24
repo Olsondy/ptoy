@@ -71,7 +71,7 @@ tts_max_pause_ms: 300
 ```
 
 - `name`、`voice` 必填，人设不能为空；front matter 只支持一行一个 `key: value`。
-- `tts_speed`：0.8–1.5，缺省 1.0；`tts_max_pause_ms`：100–1000，缺省用 TTS 服务的设置（400）。
+- `tts_speed`：0.8–1.5，缺省 1.0；`tts_max_pause_ms`：100–1000，缺省用 TTS 服务的设置（400）；`tts_emo_weight`：0–1，带情绪标签的句子的情绪强度，缺省用 `TTS_EMO_WEIGHT`（0.6）。情绪太重（比如“哀”像要哭）就调低，先试听 0.6 / 0.5 / 0.4 / 0.3 几档再定。
 - 情绪标签、字数等通话规则在 `_rules.md`，会自动拼在人设后面，人设里不用写。
 
 ### 5.2 写人设

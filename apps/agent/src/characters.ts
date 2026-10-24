@@ -24,6 +24,8 @@ export interface TtsTuning {
   readonly speed: number;
   /** Inner-pause cap in ms (`tts_max_pause_ms`); undefined = the TTS service's setting. */
   readonly maxPauseMs?: number;
+  /** Emotion strength for tagged sentences (`tts_emo_weight`); undefined = `TTS_EMO_WEIGHT`. */
+  readonly emoWeight?: number;
 }
 
 export interface Character extends CharacterSummary {
@@ -63,6 +65,7 @@ export class CharacterCatalog {
 
 const SPEED_RANGE = [0.8, 1.5] as const;
 const MAX_PAUSE_RANGE = [100, 1000] as const;
+const EMO_WEIGHT_RANGE = [0, 1] as const;
 
 function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTuning {
   const number = (key: string, [min, max]: readonly [number, number], integer: boolean): number | undefined => {
@@ -76,13 +79,18 @@ function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTun
     return value;
   };
   const maxPauseMs = number('tts_max_pause_ms', MAX_PAUSE_RANGE, true);
-  return { speed: number('tts_speed', SPEED_RANGE, false) ?? 1, ...(maxPauseMs !== undefined && { maxPauseMs }) };
+  const emoWeight = number('tts_emo_weight', EMO_WEIGHT_RANGE, false);
+  return {
+    speed: number('tts_speed', SPEED_RANGE, false) ?? 1,
+    ...(maxPauseMs !== undefined && { maxPauseMs }),
+    ...(emoWeight !== undefined && { emoWeight }),
+  };
 }
 
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
 /**
- * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n---\n<persona>`;
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n---\n<persona>`;
  * only flat `key: value` lines are supported.
  */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {

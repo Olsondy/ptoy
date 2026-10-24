@@ -9,8 +9,8 @@ export { IndexTTS } from './plugin.js';
 
 /**
  * Picks the TTS backend from config (`TTS_BACKEND`). `voice` and `tuning` (the character's) select the
- * speaker reference and speaking rate / pauses on the FastAPI service; the Gradio backend always
- * uploads `TTS_REF_AUDIO` and ignores the tuning.
+ * speaker reference, speaking rate / pauses and emotion strength on the FastAPI service; the Gradio
+ * backend always uploads `TTS_REF_AUDIO` and only takes the emotion strength.
  */
 export function createTtsBackend(config: TtsConfig, voice?: string, tuning?: TtsTuning): TtsBackend {
   switch (config.backend) {
@@ -20,7 +20,7 @@ export function createTtsBackend(config: TtsConfig, voice?: string, tuning?: Tts
         refAudioPath: config.refAudioPath,
         language: config.language,
         emotionControl: config.emotionControl,
-        emotionWeight: config.emotionWeight,
+        emotionWeight: tuning?.emoWeight ?? config.emotionWeight,
         timeoutMs: config.timeoutMs,
       });
     case 'fastapi':
@@ -30,7 +30,7 @@ export function createTtsBackend(config: TtsConfig, voice?: string, tuning?: Tts
         speed: tuning?.speed,
         maxPauseMs: tuning?.maxPauseMs,
         emotionControl: config.emotionControl,
-        emotionWeight: config.emotionWeight,
+        emotionWeight: tuning?.emoWeight ?? config.emotionWeight,
         timeoutMs: config.timeoutMs,
       });
   }
