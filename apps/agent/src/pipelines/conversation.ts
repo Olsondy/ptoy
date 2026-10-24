@@ -60,8 +60,8 @@ function llmErrorMessage(error: unknown): string {
 }
 
 function ttsErrorMessage(error: unknown): string {
-  if (error instanceof TtsError && error.kind === 'timeout') return 'AI 的语音合成超时，这句话没能说出来。';
-  return 'AI 的语音合成服务不可用，这句话没能说出来。';
+  if (error instanceof TtsError && error.kind === 'timeout') return '语音合成超时。';
+  return '语音合成失败。';
 }
 
 /**
