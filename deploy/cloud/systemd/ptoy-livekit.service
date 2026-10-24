@@ -1,0 +1,29 @@
+# ptoy-managed: cloud-v1
+[Unit]
+Description=ptoy LiveKit media server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ptoy
+Group=ptoy
+EnvironmentFile=/etc/ptoy/app.env
+Environment=HOME=/var/lib/ptoy
+Environment=XDG_CACHE_HOME=/var/cache/ptoy
+WorkingDirectory=/var/lib/ptoy
+ExecStart=/usr/local/lib/ptoy/run-service.sh livekit
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=infinity
+SendSIGKILL=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ptoy /var/cache/ptoy
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Include INSIDE a NEW APP_DOMAIN TLS Apache-compatible vhost managed by LSWS.
+# Do not put a new <VirtualHost *:443> or change the old PHP vhost/listener.
+# Keep certificates in the existing panel/certificate management flow.
+DocumentRoot /var/www/ptoy/current
+DirectoryIndex index.html
+
+<Directory /var/www/ptoy/current>
+    Options -Indexes +FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+
+RewriteEngine On
+RewriteRule ^/?internal(?:/|$) - [F,L,NC]
+RewriteRule ^/?\. - [F,L]
+RewriteRule ^ - [E=Cache-Control:no-cache]
+# Keep the full /api/ path and its query string; do not proxy /internal/.
+RewriteRule ^/?api/(.*)$ http://127.0.0.1:8787/api/$1 [P,L]

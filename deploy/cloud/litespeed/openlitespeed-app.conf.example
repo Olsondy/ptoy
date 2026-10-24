@@ -1,0 +1,49 @@
+# New ptoy APP vhost only. Keep the existing PHP vhost/listeners unchanged.
+# Map APP_DOMAIN to this vhost on the existing HTTPS listener, with its own cert.
+docRoot                   /var/www/ptoy/current/
+vhDomain                  APP_DOMAIN
+enableGzip                1
+
+index {
+  useServer               0
+  indexFiles              index.html
+  autoIndex               0
+}
+
+extprocessor ptoy_token {
+  type                    proxy
+  address                 127.0.0.1:8787
+  maxConns                30
+  initTimeout             30
+  retryTimeout            0
+  respBuffer              0
+}
+
+# Preserve /api/ in the upstream URI. Never proxy /internal/ or the entire vhost.
+context /api/ {
+  type                    proxy
+  handler                 ptoy_token
+  addDefaultCharset       off
+}
+
+context / {
+  type                    NULL
+  location                /var/www/ptoy/current/
+  allowBrowse             1
+  addDefaultCharset       off
+}
+
+rewrite {
+  enable                  1
+  autoLoadHtaccess         0
+  rules                   <<<END_rules
+RewriteRule ^/?internal(?:/|$) - [F,L,NC]
+RewriteRule ^/?\. - [F,L]
+RewriteRule ^ - [E=Cache-Control:no-cache]
+END_rules
+}
+
+module cache {
+  enableCache             0
+  enablePrivateCache      0
+}

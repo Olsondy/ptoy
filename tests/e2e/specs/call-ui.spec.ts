@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../access-fixture';
 import { Room as RtcRoom } from '@livekit/rtc-node';
-import { AccessToken, RoomAgentDispatch, RoomServiceClient } from 'livekit-server-sdk';
-import { randomUUID } from 'node:crypto';
+import { AccessToken, ParticipantInfo_State, RoomAgentDispatch, RoomServiceClient } from 'livekit-server-sdk';
+import { createHash } from 'node:crypto';
 
 const serverUrl = process.env.LIVEKIT_URL ?? (process.env.LIVEKIT_SERVER_BIN ? 'ws://localhost:7890' : 'ws://localhost:7880');
 const apiKey = process.env.LIVEKIT_API_KEY ?? 'devkey';
@@ -54,29 +54,52 @@ test('角色菜单：键盘选择、焦点恢复、窄屏与保存', async ({ pa
 test('通话字幕：流式更新、开关、错误提示及清空', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const roomName = `ui-${randomUUID()}`;
-  const callerIdentity = 'ui-caller';
   const service = new RoomServiceClient(serverUrl.replace(/^ws/, 'http'), apiKey, apiSecret);
-  // Explicit dispatch prevents the regular echo worker from entering this fixture room.
-  await service.createRoom({ name: roomName, agents: [new RoomAgentDispatch({ agentName: 'ui-fixture-manual' })] });
-  const agentToken = new AccessToken(apiKey, apiSecret, { identity: 'ui-agent', ttl: '5m' });
-  agentToken.kind = 'agent';
-  agentToken.attributes = { 'lk.agent.state': 'listening' };
-  agentToken.addGrant({ roomJoin: true, room: roomName, canPublish: true, canPublishData: true, canSubscribe: true, canUpdateOwnMetadata: true });
-  const callerToken = new AccessToken(apiKey, apiSecret, { identity: callerIdentity, ttl: '5m' });
-  callerToken.addGrant({ roomJoin: true, room: roomName, canPublish: true, canPublishData: true, canSubscribe: true });
-  const participantToken = await callerToken.toJwt();
-  const peer = new RtcRoom();
-  try {
-    await peer.connect(serverUrl, await agentToken.toJwt());
-    const agent = peer.localParticipant!;
-    await page.route('**/api/characters', (route) => route.fulfill({ json: characterList }));
-    await page.route('**/api/token', (route) => route.fulfill({
-      json: { serverUrl, roomName, participantName: callerIdentity, participantToken },
-    }));
-    await page.goto('/');
+  let roomName = '';
+  let callerIdentity = '';
+  let peer = new RtcRoom();
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const secret = process.env.ACCESS_INTERNAL_SECRET ?? createHash('sha256').update('ptoy-access-internal-v1\0' + apiSecret).digest('hex');
+  const internal = (operation: string) => fetch(`http://127.0.0.1:${process.env.E2E_TOKEN_PORT ?? 8730}/internal/access/${operation}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room: roomName, participant: callerIdentity, agentId: 'ui-agent' }),
+  });
+  const dial = async () => {
+    const response = page.waitForResponse('**/api/token');
     await page.getByTestId('call-toggle').click();
+    expect((await response).status()).toBe(200);
+    await expect.poll(async () => {
+      try { return (await service.getParticipant(roomName, callerIdentity)).state; } catch { return -1; }
+    }).toBe(ParticipantInfo_State.ACTIVE);
+    expect((await internal('admit')).status).toBe(200);
+    heartbeat = setInterval(() => void internal('heartbeat'), 3000);
     await expect(page.getByTestId('call-status')).toHaveAttribute('data-status', 'connected');
+  };
+  const hangup = async () => {
+    await page.getByTestId('call-toggle').click();
+    clearInterval(heartbeat);
+    await peer.disconnect();
+    expect((await internal('finish')).status).toBe(200);
+    await service.deleteRoom(roomName);
+  };
+  try {
+    await page.route('**/api/characters', (route) => route.fulfill({ json: characterList }));
+    await page.route('**/api/token', async route => {
+      const response = await route.fetch();
+      const token = await response.json();
+      roomName = token.roomName; callerIdentity = token.participantName;
+      // Keep the real access reservation; only the voice peer is a deterministic UI fixture.
+      await service.createRoom({ name: roomName, agents: [new RoomAgentDispatch({ agentName: 'ui-fixture-manual' })] });
+      const agentToken = new AccessToken(apiKey, apiSecret, { identity: 'ui-agent', ttl: '5m' });
+      agentToken.kind = 'agent'; agentToken.attributes = { 'lk.agent.state': 'listening' };
+      agentToken.addGrant({ roomJoin: true, room: roomName, canPublish: true, canPublishData: true, canSubscribe: true, canUpdateOwnMetadata: true });
+      peer = new RtcRoom();
+      await peer.connect(serverUrl, await agentToken.toJwt());
+      await route.fulfill({ response });
+    });
+    await page.goto('/');
+    await dial();
+    const agent = peer.localParticipant!;
     await expect(page.getByTestId('caption-window')).toBeVisible();
     await expect(page.getByTestId('character-picker')).toBeDisabled();
     await expect(page.getByText('在听你说', { exact: true })).toBeVisible();
@@ -137,15 +160,16 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('connected-mobile.png') });
-    await page.getByTestId('call-toggle').click();
+    await hangup();
     await expect(page.getByTestId('caption-window')).toHaveCount(0);
-    await page.getByTestId('call-toggle').click();
+    await dial();
     await expect(page.getByTestId('caption-window')).toBeVisible();
     await expect(page.getByTestId('agent-subtitle')).toHaveCount(0);
-    await page.getByTestId('call-toggle').click();
+    await hangup();
     expect(errors).toEqual([]);
   } finally {
+    clearInterval(heartbeat);
     await peer.disconnect();
-    await service.deleteRoom(roomName);
+    if (roomName) await service.deleteRoom(roomName).catch(() => undefined);
   }
 });

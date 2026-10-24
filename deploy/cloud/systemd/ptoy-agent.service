@@ -1,0 +1,30 @@
+# ptoy-managed: cloud-v1
+[Unit]
+Description=ptoy Voice Agent
+After=network-online.target ptoy-livekit.service ptoy-token.service tailscaled.service
+Wants=network-online.target ptoy-livekit.service ptoy-token.service
+
+[Service]
+Type=simple
+User=ptoy
+Group=ptoy
+EnvironmentFile=/etc/ptoy/app.env
+Environment=HOME=/var/lib/ptoy
+Environment=XDG_CACHE_HOME=/var/cache/ptoy
+WorkingDirectory=/opt/ptoy/current/apps/agent
+ExecStart=/usr/local/lib/ptoy/run-service.sh agent
+Restart=on-failure
+RestartSec=5
+# release.sh drains before stopping; do not force-kill a live call on timeout.
+TimeoutStopSec=infinity
+SendSIGKILL=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ptoy /var/cache/ptoy
+LimitNOFILE=16384
+
+[Install]
+WantedBy=multi-user.target

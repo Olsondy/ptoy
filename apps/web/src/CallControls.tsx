@@ -6,17 +6,19 @@ import type { CallStatus } from './useCall';
 interface CallControlsProps {
   status: CallStatus;
   error: string | undefined;
+  notice?: string;
   onToggle: () => void;
   disabled?: boolean;
 }
 
-export function CallControls({ status, error, onToggle, disabled = false }: CallControlsProps) {
+export function CallControls({ status, error, notice, onToggle, disabled = false }: CallControlsProps) {
   const inCall = status !== 'disconnected';
   const callAction = inCall ? '挂断' : '开始通话';
   return (
     <footer className="call-footer">
       <div className="call-error-slot" aria-live="polite">
         {error && <p className="call-error" role="alert" data-testid="call-error">{error}</p>}
+        {!error && notice && <p className="call-notice" role="status">{notice}</p>}
       </div>
       <div className="call-controls" role="group" aria-label="通话控制">
         <Tooltip>

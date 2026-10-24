@@ -1,0 +1,59 @@
+.invite-prototype { display: grid; grid-template-columns: minmax(0, 1fr) 304px; min-height: 100dvh; }
+.invite-preview { min-width: 0; min-height: 100dvh; padding: 24px 32px; display: flex; flex-direction: column; align-items: center; }
+.invite-header { flex-shrink: 0; }
+.invite-private { display: inline-flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: var(--call-type-label); white-space: nowrap; }
+.invite-private svg { width: 14px; height: 14px; }
+.invite-entry { width: min(100%, 352px); margin: auto; padding: 40px 0 56px; text-align: center; }
+.invite-orb { width: 136px; aspect-ratio: 1; position: relative; margin: 0 auto 28px; }
+.invite-entry h1 { margin: 0 0 12px; font-size: var(--invite-title-size); line-height: 1.4; font-weight: 500; letter-spacing: -0.02em; }
+.invite-description { color: var(--muted-foreground); font-size: var(--call-type-secondary); line-height: 1.8; margin: 0; }
+.invite-form { text-align: left; margin-top: 36px; }
+.invite-form label { display: block; font-size: var(--call-type-secondary); margin-bottom: 10px; }
+.invite-code { height: 52px; padding-inline: 16px; border-radius: var(--radius); font-size: var(--call-type-body); background: var(--invite-field); caret-color: var(--foreground); }
+.invite-code::placeholder { color: var(--muted-foreground); }
+.invite-feedback { min-height: 44px; padding-block: 9px; font-size: var(--call-type-label); line-height: 1.7; color: var(--muted-foreground); }
+.invite-feedback p { margin: 0; }
+.invite-error { color: var(--destructive); }
+.invite-success { color: var(--call-connected); display: flex; align-items: center; gap: 6px; }
+.invite-success svg { width: 15px; height: 15px; }
+.invite-submit { height: 48px; width: 100%; border-radius: var(--radius); gap: 10px; }
+.invite-remember { display: flex; justify-content: center; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--call-type-label); margin: 16px 0 0; }
+.invite-remember svg { width: 14px; height: 14px; }
+.invite-help { margin: 36px 0 0; color: var(--muted-foreground); font-size: var(--call-type-label); }
+.invite-review { padding: 28px 24px; background: var(--invite-review-background); border-left: 1px solid var(--border); }
+.invite-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.invite-review h2 { font-size: var(--call-type-body); font-weight: 500; margin: 0; }
+.invite-review-heading > span { font-size: var(--call-type-label); color: var(--muted-foreground); }
+.invite-review-intro, .invite-review-section > p { font-size: var(--call-type-label); line-height: 1.8; color: var(--muted-foreground); margin: 12px 0 0; }
+.invite-review-section { margin-top: 28px; }
+.invite-review h3 { margin: 0 0 12px; font-size: var(--call-type-label); color: var(--muted-foreground); font-weight: 500; }
+.invite-review-options { display: flex; gap: 4px; }
+.invite-review-options button { flex: 1; padding-inline: 8px; }
+.invite-review button { min-height: 44px; white-space: normal; font-size: var(--call-type-label); }
+.invite-demo-code { display: block; padding: 12px 0; font-size: var(--call-type-secondary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.invite-fill { width: 100%; justify-content: space-between; margin-top: 4px; }
+.invite-scenarios { display: grid; gap: 2px; }
+.invite-scenarios button { justify-content: space-between; padding-inline: 12px; }
+.invite-reset { width: 100%; margin-top: 4px; justify-content: flex-start; }
+.invite-demo-caption { font-size: var(--call-type-body); line-height: 1.7; margin-top: 20px; }
+.invite-preview .call-welcome h1:focus { outline: none; }
+@media (max-width: 760px) {
+  .invite-prototype { grid-template-columns: minmax(0, 1fr); }
+  .invite-preview { padding: 16px 24px max(24px, env(safe-area-inset-bottom)); }
+  .invite-entry { padding-block: 28px 32px; }
+  .invite-orb { width: 112px; margin-bottom: 24px; }
+  .invite-form { margin-top: 28px; }
+  .invite-help { margin-top: 28px; }
+  .invite-review { border-left: 0; border-top: 1px solid var(--border); padding: 28px 24px; }
+  .invite-review-options { max-width: 352px; }
+  .invite-scenarios { grid-template-columns: 1fr 1fr; }
+}
+@media (max-height: 650px) and (max-width: 760px) {
+  .invite-orb { width: 80px; margin-bottom: 18px; }
+  .invite-entry { padding-block: 20px; }
+  .invite-form { margin-top: 22px; }
+  .invite-help { margin-top: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invite-prototype *, .invite-prototype *::before { animation: none !important; transition: none !important; }
+}
