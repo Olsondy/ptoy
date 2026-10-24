@@ -7,7 +7,11 @@ const schema = z.object({
   ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
+  TTS_BACKEND: z.string().default('gradio'),
 });
+
+/** Hosted OpenRouter has no `/health`; it is not a local model to gate on. */
+const isOpenRouter = (url: string) => new URL(url).hostname === 'openrouter.ai';
 export interface ModelChecksConfig { enabled: boolean; timeoutMs: number; cacheMs: number; urls: readonly string[] }
 export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): ModelChecksConfig {
   const e = schema.parse(env);
@@ -19,7 +23,11 @@ export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): Mod
     return url.href;
   };
   return { enabled: e.CLOUD_MODEL_CHECKS === 'true', timeoutMs: e.CLOUD_MODEL_CHECK_TIMEOUT_MS, cacheMs: e.CLOUD_MODEL_CHECK_CACHE_MS,
-    urls: [health(e.ASR_URL), health(e.LLM_BASE_URL, true), health(e.TTS_FASTAPI_URL)] };
+    urls: [
+      health(e.ASR_URL),
+      ...(isOpenRouter(e.LLM_BASE_URL) ? [] : [health(e.LLM_BASE_URL, true)]),
+      ...(e.TTS_BACKEND === 'openrouter' ? [] : [health(e.TTS_FASTAPI_URL)]),
+    ] };
 }
 
 /** Readiness only gates new reservations. A failed probe never terminates an existing call. */

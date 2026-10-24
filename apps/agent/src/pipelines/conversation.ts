@@ -240,7 +240,10 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   // The page's pick arrives as a caller attribute (ADR 0007); a stale or missing id gets the default.
   const requested = caller.attributes[ATTRIBUTE_CHARACTER] || undefined;
-  const character = loadCharacters(config.characters.dir, config.characters.defaultId, config.sharedRules).resolve(requested);
+  const character = loadCharacters(config.characters.dir, config.characters.defaultId, {
+    sharedRules: config.sharedRules,
+    ttsBackend: config.characters.ttsBackend,
+  }).resolve(requested);
   if (requested !== undefined && requested !== character.id) {
     logger.warn({ requested, character: character.id }, 'unknown character, using the default');
   }

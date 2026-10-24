@@ -42,7 +42,7 @@ const { reasoningEffort } = await withReasoningEffort({
 });
 // Same switch as the agent (LLM_SHARED_RULES): off → no `_rules.md`, no tone prefix.
 const sharedRules = !['false', '0'].includes(process.env.LLM_SHARED_RULES ?? '');
-const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character, sharedRules);
+const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character, { sharedRules });
 const character = catalog.defaultCharacter;
 const out = (line: string) => process.stdout.write(`${line}\n`);
 

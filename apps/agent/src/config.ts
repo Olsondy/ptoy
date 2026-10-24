@@ -12,15 +12,22 @@ const livekitSchema = z.object({
 /** Character prompts shipped with the agent: one `<id>.md` per character plus `_rules.md` (edit the files, not the code). */
 export const DEFAULT_CHARACTERS_DIR = fileURLToPath(new URL('../prompts/characters', import.meta.url));
 
+export const TTS_BACKENDS = ['gradio', 'fastapi', 'openrouter'] as const;
+export type TtsBackendName = (typeof TTS_BACKENDS)[number];
+
 const charactersSchema = z.object({
   CHARACTERS_DIR: z.string().min(1).default(DEFAULT_CHARACTERS_DIR),
   DEFAULT_CHARACTER: z.string().min(1).default('xiaoyou'),
+  // Read by the token server too: only characters made for this backend are offered.
+  TTS_BACKEND: z.enum(TTS_BACKENDS).default('gradio'),
 });
 
 /** Where the character prompts live and which one a call gets when the page picked none (ADR 0007). */
 export interface CharactersConfig {
   readonly dir: string;
   readonly defaultId: string;
+  /** Characters whose `tts_backends` lack it are hidden from the page and refused for calls. */
+  readonly ttsBackend: TtsBackendName;
 }
 
 const tokenServerSchema = livekitSchema.extend({
@@ -68,7 +75,7 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
     corsOrigin: e.TOKEN_SERVER_CORS_ORIGIN,
     tokenTtl: e.TOKEN_TTL,
     characterLinkSecret: e.CHARACTER_LINK_SECRET ?? e.LIVEKIT_API_SECRET,
-    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
+    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER, ttsBackend: e.TTS_BACKEND },
   };
 }
 
@@ -151,7 +158,6 @@ const conversationSchema = charactersSchema.extend({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
-  TTS_BACKEND: z.enum(['gradio', 'fastapi', 'openrouter']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
   TTS_REF_AUDIO: z.string().min(1).optional(),
@@ -332,7 +338,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       ...(e.LLM_REASONING_EFFORT !== undefined && { reasoningEffort: e.LLM_REASONING_EFFORT }),
     },
     tts,
-    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
+    characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER, ttsBackend: e.TTS_BACKEND },
     sharedRules: e.LLM_SHARED_RULES,
     audioSampleRate: e.AGENT_AUDIO_SAMPLE_RATE,
     fillers: e.FILLERS_ENABLED

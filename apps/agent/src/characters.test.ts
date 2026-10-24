@@ -14,6 +14,7 @@ describe('parseCharacterFile', () => {
       description: '老朋友',
       voice: 'chunqing',
       tts: { speed: 1 },
+      ttsBackends: ['gradio', 'fastapi'],
       instructions: '你叫小悠。\n\n通话规则',
     });
   });
@@ -64,7 +65,7 @@ describe('loadCharacters', () => {
   });
 
   it('leaves the shared rules out when they are off', () => {
-    expect(loadCharacters(dir, 'b', false).defaultCharacter.instructions).toBe('我是 B。');
+    expect(loadCharacters(dir, 'b', { sharedRules: false }).defaultCharacter.instructions).toBe('我是 B。');
   });
 
   it('resolves unknown or missing ids to the default', () => {
@@ -73,6 +74,17 @@ describe('loadCharacters', () => {
     expect(catalog.get('nope')).toBeUndefined();
     expect(catalog.resolve(undefined).id).toBe('a');
     expect(catalog.resolve('nope').id).toBe('a');
+  });
+
+  it('keeps only the characters made for the TTS backend (default: the IndexTTS ones)', () => {
+    writeFileSync(join(dir, 'f.md'), '---\nname: F\nvoice: v\ntts_backends: openrouter\n---\n我是 F。');
+    const ids = (backend?: 'fastapi' | 'openrouter') =>
+      loadCharacters(dir, backend === 'openrouter' ? 'f' : 'a', { ttsBackend: backend }).characters.map((c) => c.id);
+    expect(ids('fastapi')).toEqual(['a', 'b']);
+    expect(ids('openrouter')).toEqual(['f']);
+    expect(ids(undefined)).toEqual(['a', 'b', 'f']);
+    expect(() => loadCharacters(dir, 'a', { ttsBackend: 'openrouter' })).toThrow(/not made for this TTS_BACKEND/);
+    expect(() => parseCharacterFile('x', '---\nname: X\nvoice: v\ntts_backends: fish\n---\n我。', 'R')).toThrow(/tts_backends/);
   });
 
   it('fails when the default character does not exist', () => {

@@ -38,7 +38,7 @@ beforeEach(async () => {
   config = loadTokenServerConfig({ LIVEKIT_URL: 'ws://127.0.0.1:1', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'fixture',
     APP_ORIGIN: 'http://localhost', INVITE_DB_PATH: ':memory:', CLOUD_MODEL_CHECKS: 'true', CLOUD_MODEL_CHECK_CACHE_MS: '0', CLOUD_MODEL_CHECK_TIMEOUT_MS: '100',
     ASR_URL: modelBase + '/asr', LLM_BASE_URL: modelBase + '/llm/v1/', TTS_FASTAPI_URL: modelBase + '/tts' });
-  vi.mocked(loadCharacters).mockReturnValue(new CharacterCatalog([{ id: 'fixture', name: 'Fixture', description: 'test', voice: 'test', tts: { speed: 1 }, instructions: 'Synthetic test only.' }], 'fixture'));
+  vi.mocked(loadCharacters).mockReturnValue(new CharacterCatalog([{ id: 'fixture', name: 'Fixture', description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], instructions: 'Synthetic test only.' }], 'fixture'));
   store = new AccessStore(':memory:');
   api = createTokenServer(config, undefined, new AccessController(store, config.access, { participants: async () => [], close: async () => {} }));
   base = await listen(api);
@@ -110,6 +110,10 @@ describe('cloud admission and maintenance boundary', () => {
     expect(await (await availability(cookie)).json()).toEqual({ available: false, reason: 'models_unavailable' });
     expect(loadAgentHealthConfig({})).toEqual({ host: '127.0.0.1', port: 8081 });
     expect(() => loadAgentHealthConfig({ AGENT_HEALTH_PORT: 'bad' })).toThrow();
+  });
+  it('does not probe hosted OpenRouter LLM or TTS', () => {
+    const urls = loadModelChecksConfig({ LLM_BASE_URL: 'https://openrouter.ai/api/v1', TTS_BACKEND: 'openrouter' }).urls;
+    expect(urls).toEqual(['http://127.0.0.1:8001/health']);
   });
   it('shares in-flight probes and bounds cached readiness', async () => {
     let now = 1;

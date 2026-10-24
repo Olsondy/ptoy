@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { TTS_BACKENDS, type TtsBackendName } from './config.js';
 
 /**
  * Caller participant attribute carrying the character id picked on the page. The token server
@@ -37,6 +38,8 @@ export interface Character extends CharacterSummary {
    */
   readonly voice: string;
   readonly tts: TtsTuning;
+  /** TTS backends this character's voice exists on (`tts_backends`); default the IndexTTS ones. */
+  readonly ttsBackends: readonly TtsBackendName[];
   /** Full system prompt: the persona followed by the shared call rules. */
   readonly instructions: string;
 }
@@ -49,7 +52,9 @@ export class CharacterCatalog {
   constructor(characters: readonly Character[], defaultId: string) {
     const fallback = characters.find((c) => c.id === defaultId);
     if (!fallback) {
-      throw new Error(`DEFAULT_CHARACTER "${defaultId}" not found (have: ${characters.map((c) => c.id).join(', ')})`);
+      throw new Error(
+        `DEFAULT_CHARACTER "${defaultId}" not found or not made for this TTS_BACKEND (have: ${characters.map((c) => c.id).join(', ')})`,
+      );
     }
     this.defaultCharacter = fallback;
     this.characters = [fallback, ...characters.filter((c) => c !== fallback)];
@@ -91,10 +96,23 @@ function parseTtsTuning(id: string, fields: ReadonlyMap<string, string>): TtsTun
   };
 }
 
+/** IndexTTS voices (`services/tts` references, recorded fillers) are what the shipped characters have. */
+const DEFAULT_TTS_BACKENDS: readonly TtsBackendName[] = ['gradio', 'fastapi'];
+
+function parseTtsBackends(id: string, raw: string | undefined): readonly TtsBackendName[] {
+  if (raw === undefined || raw === '') return DEFAULT_TTS_BACKENDS;
+  const names = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const bad = names.find((n) => !(TTS_BACKENDS as readonly string[]).includes(n));
+  if (bad !== undefined || names.length === 0) {
+    throw new Error(`Character "${id}" has \`tts_backends: ${raw}\`; expected some of ${TTS_BACKENDS.join(', ')}`);
+  }
+  return names as TtsBackendName[];
+}
+
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
 /**
- * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n---\n<persona>`;
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n[tts_backends: …]\n---\n<persona>`;
  * only flat `key: value` lines are supported.
  */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
@@ -119,20 +137,30 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
     description: fields.get('description') ?? '',
     voice,
     tts,
+    ttsBackends: parseTtsBackends(id, fields.get('tts_backends')),
     instructions: shared ? `${persona}\n\n${shared}` : persona,
   };
 }
 
+export interface LoadCharactersOptions {
+  /** Append the shared `_rules.md` (default true; `LLM_SHARED_RULES`). */
+  readonly sharedRules?: boolean;
+  /** Keep only the characters made for this TTS backend; undefined keeps all. */
+  readonly ttsBackend?: TtsBackendName;
+}
+
 /**
- * Reads every `<id>.md` in `dir` plus, with `sharedRules` (default), the shared `_rules.md`. Read per
- * call, so editing a prompt takes effect on the next call without restarting anything.
+ * Reads every `<id>.md` in `dir` plus, with `sharedRules`, the shared `_rules.md`. Read per call,
+ * so editing a prompt takes effect on the next call without restarting anything.
  */
-export function loadCharacters(dir: string, defaultId: string, sharedRules = true): CharacterCatalog {
-  const rules = sharedRules ? readFileSync(join(dir, RULES_FILE), 'utf8') : '';
+export function loadCharacters(dir: string, defaultId: string, opts: LoadCharactersOptions = {}): CharacterCatalog {
+  const rules = (opts.sharedRules ?? true) ? readFileSync(join(dir, RULES_FILE), 'utf8') : '';
+  const backend = opts.ttsBackend;
   const characters = readdirSync(dir)
     .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
     .sort()
-    .map((f) => parseCharacterFile(f.slice(0, -'.md'.length), readFileSync(join(dir, f), 'utf8'), rules));
+    .map((f) => parseCharacterFile(f.slice(0, -'.md'.length), readFileSync(join(dir, f), 'utf8'), rules))
+    .filter((c) => backend === undefined || c.ttsBackends.includes(backend));
   return new CharacterCatalog(characters, defaultId);
 }
 

@@ -157,7 +157,7 @@ export function createTokenServer(config: TokenServerConfig, logger?: Pick<Retur
         if (links.length > 1) throw new BadRequest('expected one characterLink');
         let id: string | undefined;
         if (links.length) { try { id = resolveCharacterLink(links[0]!, config.characterLinkSecret); } catch { throw new BadRequest('invalid character link'); } }
-        const catalog = loadCharacters(config.characters.dir, config.characters.defaultId);
+        const catalog = loadCharacters(config.characters.dir, config.characters.defaultId, { ttsBackend: config.characters.ttsBackend });
         const fixed = id !== undefined ? catalog.get(id) : undefined;
         if (links.length && !fixed) throw new BadRequest('character unavailable');
         const body: CharactersResponse = { defaultId: (fixed ?? catalog.defaultCharacter).id, characters: fixed ? [summarize(fixed)] : catalog.characters.map(summarize) };
@@ -167,7 +167,7 @@ export function createTokenServer(config: TokenServerConfig, logger?: Pick<Retur
         const request = selectionSchema.parse(await readJson(req));
         let id = request.character;
         if (request.characterLink !== undefined) { try { id = resolveCharacterLink(request.characterLink, config.characterLinkSecret); } catch { throw new BadRequest('invalid character link'); } }
-        const catalog = loadCharacters(config.characters.dir, config.characters.defaultId);
+        const catalog = loadCharacters(config.characters.dir, config.characters.defaultId, { ttsBackend: config.characters.ttsBackend });
         const character = id === undefined ? catalog.defaultCharacter : catalog.get(id);
         if (!character) throw new BadRequest('character unavailable');
         if (path === '/api/character-link') {

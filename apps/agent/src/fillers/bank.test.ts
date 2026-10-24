@@ -6,9 +6,7 @@ import { type Filler, FillerBank, fillerAudio, fillerGate, fillerManifestPath, l
 
 describe('loadFillerBank', () => {
   it('ships a filler set for every shipped IndexTTS character voice', () => {
-    // Fish-only characters (TTS_BACKEND=openrouter) have no IndexTTS-recorded fillers.
-    const fishOnly = new Set(['rouyi']);
-    for (const c of loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou').characters.filter((c) => !fishOnly.has(c.id))) {
+    for (const c of loadCharacters(DEFAULT_CHARACTERS_DIR, 'xiaoyou', { ttsBackend: 'fastapi' }).characters) {
       expect(existsSync(fillerManifestPath(DEFAULT_FILLERS_DIR, c.voice)), `${c.id} → ${c.voice}`).toBe(true);
     }
   });
