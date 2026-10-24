@@ -21,9 +21,17 @@ export interface SegmenterOptions {
    */
   readonly maxSegmentChars?: number;
   /**
+   * Later segments are not cut at a sentence end before they have this many content characters:
+   * a shorter sentence ("真辛苦。") is synthesized together with the next one. Every synthesis pays a
+   * fixed overhead (~1.3 s on IndexTTS2), so a short segment takes longer to make than to play and
+   * the next one is not ready in time, leaving a silence mid-reply. Default 1 (every sentence).
+   */
+  readonly minSegmentChars?: number;
+  /**
    * "sentence" (default, per spec): a sentence without its own tag is 平静.
    * "untilNextTag": a tag's emotion carries over to later untagged sentences.
-   * "reply": the reply's first tag sets the emotion of the whole reply; later tags only cut.
+   * "reply": the reply's first tag sets the emotion of the whole reply; later tags are dropped
+   *   (they neither change the emotion nor cut a segment).
    */
   readonly emotionScope?: "sentence" | "untilNextTag" | "reply";
   /**
@@ -43,6 +51,7 @@ export const DEFAULT_OPTIONS: Required<SegmenterOptions> = {
   firstSegmentMinChars: 2,
   firstSegmentMaxChars: 12,
   maxSegmentChars: 40,
+  minSegmentChars: 1,
   emotionScope: "sentence",
   maxTagChars: 10,
   dropLeadingInterjection: false,
@@ -71,7 +80,7 @@ interface Cut {
 }
 
 function validate(opts: Required<SegmenterOptions>): Required<SegmenterOptions> {
-  const positive = ["firstSegmentMinChars", "firstSegmentMaxChars", "maxSegmentChars", "maxTagChars"] as const;
+  const positive = ["firstSegmentMinChars", "firstSegmentMaxChars", "maxSegmentChars", "minSegmentChars", "maxTagChars"] as const;
   for (const key of positive) {
     const v = opts[key];
     if (!Number.isInteger(v) || v < 1) throw new RangeError(`${key} must be a positive integer, got ${v}`);
@@ -101,7 +110,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
    * may still extend it (e.g. "？" then "！", or "。" then "”").
    */
   function findCut(gs: readonly string[]): Cut | null {
-    const minContent = firstDone ? 1 : opts.firstSegmentMinChars;
+    const minContent = firstDone ? opts.minSegmentChars : opts.firstSegmentMinChars;
     const maxContent = firstDone ? opts.maxSegmentChars : opts.firstSegmentMaxChars;
     let content = 0;
     let lastCommaEnd: number | null = null;
@@ -161,9 +170,10 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
 
   /** A tag starts a new sentence: flush what came before it under the old emotion. */
   function pushTag(next: Emotion, out: Segment[]): void {
+    if (opts.emotionScope === "reply" && tagged) return;
     emit(buffer, out);
     buffer = "";
-    if (opts.emotionScope !== "reply" || !tagged) emotion = next;
+    emotion = next;
     tagged = true;
   }
 

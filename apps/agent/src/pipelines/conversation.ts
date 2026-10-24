@@ -11,7 +11,7 @@ import {
   voice,
 } from '@livekit/agents';
 import type { AudioFrame } from '@livekit/rtc-node';
-import type { Emotion } from '@ptoy/segmenter';
+import type { Emotion, SegmenterOptions } from '@ptoy/segmenter';
 import { existsSync } from 'node:fs';
 import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
@@ -37,6 +37,19 @@ import type { CallPipeline } from './types.js';
  * The web shows it in place of the agent subtitle; cleared when the agent speaks again.
  */
 export const ATTRIBUTE_AGENT_ERROR = 'ptoy.agent_error';
+
+/**
+ * How a reply is cut for TTS (also used by `scripts/chat.ts`).
+ * One emotion per reply (its first tag): per-sentence tags switched between the plain reference
+ * voice (平静) and emotion-vector synthesis mid-reply, which sounded like the voice changing.
+ * Sentences under 10 characters ride with the next one: a short segment takes longer to synthesize
+ * than to play (~1.3 s fixed cost each), so the next one was not ready and the reply paused.
+ */
+export const REPLY_SEGMENTER: SegmenterOptions = {
+  emotionScope: 'reply',
+  dropLeadingInterjection: true,
+  minSegmentChars: 10,
+};
 
 function llmErrorMessage(error: unknown): string {
   if (error instanceof APITimeoutError) return 'AI 想得太久没有回应，请再说一次。';
@@ -211,12 +224,10 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
-  // One emotion per reply (its first tag): per-sentence tags switched between the plain reference
-  // voice (平静) and emotion-vector synthesis mid-reply, which sounded like the voice changing.
   const tts = new IndexTTS({
     backend: createTtsBackend(config.tts, character.voice, character.tts),
     sampleRate: config.audioSampleRate,
-    segmenter: { emotionScope: 'reply', dropLeadingInterjection: true },
+    segmenter: REPLY_SEGMENTER,
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();
