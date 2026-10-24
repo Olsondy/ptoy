@@ -91,7 +91,7 @@ llama-server -m "D:\Resources\MyWorkspace\ai\models\Huihui-Qwen3-8B-abliterated-
 - 启动顺序：先启动 IndexTTS，再启动 llama-server
 - 前缀缓存：system prompt 固定、对话历史只追加不改，可以让每轮的首 token 延迟保持在几十毫秒
 - 本机曾在只设置 `--reasoning off --reasoning-budget 0`、使用 GGUF 内置模板时仍输出思考内容；当前同时加载原模型模板并指定 reasoning 格式，已验证直接输出正式回答。
-- 换线上模型：改 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（OpenAI 兼容即可）。推理模型用 `LLM_REASONING_EFFORT` 传 `reasoning_effort`；经本机 magpie 代理接 ChatGPT（`codex/*`）时思考关不掉，最低 `low`，2026-10-24 Mac 实测首 token 约 1–1.5 秒（`none`/`minimal` 不报错但不更快）
+- 换线上模型：改 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（OpenAI 兼容即可）。推理模型的 `reasoning_effort`：不设 `LLM_REASONING_EFFORT` 时，Agent 每个进程查一次 `/models`，用该模型列出的最低档（magpie 列出 `supported_reasoning_levels`；llama-server 没有则不传），设了就用设的值；magpie 的 DeepSeek 不传时会思考，最低档 `none` 首 token 约 0.4–0.8 秒；经本机 magpie 代理接 ChatGPT（`codex/*`）时思考关不掉，最低 `low`，2026-10-24 Mac 实测首 token 约 1–1.5 秒（`none`/`minimal` 不报错但不更快）
 
 ### 本机部署基线
 

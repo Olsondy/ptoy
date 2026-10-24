@@ -115,6 +115,9 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
 /** Pre-recorded fillers shipped in the repo, one `<voice>/manifest.json` per voice (services/fillers generates them). */
 export const DEFAULT_FILLERS_DIR = fileURLToPath(new URL('../../../assets/fillers', import.meta.url));
 
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 const conversationSchema = charactersSchema.extend({
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   LLM_MODEL: z.string().min(1).default('qwen3-8b'),
@@ -124,7 +127,7 @@ const conversationSchema = charactersSchema.extend({
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LLM_MAX_RETRY: z.coerce.number().int().nonnegative().default(1),
-  LLM_REASONING_EFFORT: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
+  LLM_REASONING_EFFORT: z.enum(REASONING_EFFORTS).optional(),
   TTS_BACKEND: z.enum(['gradio', 'fastapi']).default('gradio'),
   TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
@@ -155,10 +158,11 @@ export interface LlmConfig {
   readonly timeoutMs: number;
   readonly maxRetry: number;
   /**
-   * `reasoning_effort` for hosted reasoning models (e.g. ChatGPT via a proxy); undefined = not sent.
-   * llama-server turns thinking off at launch instead, see docs/architecture/server.md §5.
+   * `reasoning_effort` for hosted reasoning models (e.g. ChatGPT or DeepSeek via magpie). Unset:
+   * the lowest level the endpoint's `/models` lists for the model (`withReasoningEffort`), or
+   * nothing when it lists none (llama-server turns thinking off at launch, docs/architecture/server.md §5).
    */
-  readonly reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  readonly reasoningEffort?: ReasoningEffort;
 }
 
 export interface GradioTtsConfig {
