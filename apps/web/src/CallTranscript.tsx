@@ -1,9 +1,35 @@
 import { useRoomContext, useTranscriptions, useVoiceAssistant } from '@livekit/components-react';
+import { useLayoutEffect, useRef } from 'react';
 
 const STATE_LABEL: Record<string, string> = {
   connecting: '正在等候回应', initializing: '正在等候回应',
   listening: '在听你说', thinking: '正在想一想', speaking: '正在回应',
 };
+
+/** Within this many px of the bottom counts as following the live text. */
+const FOLLOW_SLACK_PX = 8;
+
+/**
+ * A caption that scrolls: it follows the words being spoken, and stays put while the caller has
+ * scrolled up to reread the start of a long reply (scrolling back to the bottom follows again).
+ */
+function CaptionText({ text, speaker }: { text: string; speaker: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const following = useRef(true);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && following.current) el.scrollTop = el.scrollHeight;
+  }, [text]);
+  const onScroll = () => {
+    const el = ref.current;
+    if (el) following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+  };
+  return (
+    <p ref={ref} onScroll={onScroll} data-testid={`${speaker}-subtitle`} data-state="text" aria-live="polite">
+      <span>{text}</span>
+    </p>
+  );
+}
 
 export function CallTranscript({ visible, characterName }: { visible: boolean; characterName: string }) {
   const room = useRoomContext();
@@ -30,7 +56,7 @@ export function CallTranscript({ visible, characterName }: { visible: boolean; c
         {latest.length ? latest.map((entry) => (
           <div className={`caption-line caption-${entry.speaker}`} key={entry.id}>
             <span className="caption-speaker">{entry.speaker === 'user' ? '你' : characterName}</span>
-            <p data-testid={`${entry.speaker}-subtitle`} data-state="text" aria-live="polite"><span>{entry.text}</span></p>
+            <CaptionText text={entry.text} speaker={entry.speaker} />
           </div>
         )) : <p className="caption-empty">说点什么吧，字幕会出现在这里</p>}
       </div>
