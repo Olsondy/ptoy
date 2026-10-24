@@ -199,9 +199,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .caption-window[hidden] { display: none; }
 .caption-line { --caption-size: var(--call-type-body); display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 12px; text-align: left; align-items: start; padding-inline: 12px; }
 .caption-speaker { color: var(--muted-foreground); font-size: var(--call-type-label); line-height: calc(var(--caption-size) * 1.7); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Anchor long streaming captions at the end, keeping the words being spoken visible. */
-.caption-line p { font-size: var(--caption-size); font-weight: 400; line-height: 1.7; letter-spacing: 0.01em; overflow-wrap: anywhere; display: flex; flex-direction: column; justify-content: flex-end; max-height: 5.1em; overflow: hidden; text-wrap: pretty; }
-.caption-line p > span { flex-shrink: 0; }
+/* Long captions scroll; CaptionText keeps the words being spoken in view unless the caller scrolled up. */
+.caption-line p { font-size: var(--caption-size); font-weight: 400; line-height: 1.7; letter-spacing: 0.01em; overflow-wrap: anywhere; max-height: 5.1em; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; text-wrap: pretty; }
 .caption-user { --caption-size: var(--call-type-secondary); }
 .caption-user p { color: var(--muted-foreground); max-height: 3.4em; }
 .caption-empty { color: var(--muted-foreground); font-size: var(--call-type-secondary); line-height: 1.7; text-wrap: balance; }
