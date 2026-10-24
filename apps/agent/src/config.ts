@@ -28,6 +28,7 @@ const tokenServerSchema = livekitSchema.extend({
   TOKEN_SERVER_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   TOKEN_SERVER_CORS_ORIGIN: z.string().default('*'),
   TOKEN_TTL: z.string().default('1h'),
+  CHARACTER_LINK_SECRET: z.string().min(32).optional(),
 });
 
 export interface TokenServerConfig {
@@ -39,6 +40,7 @@ export interface TokenServerConfig {
   readonly port: number;
   readonly corsOrigin: string;
   readonly tokenTtl: string;
+  readonly characterLinkSecret: string;
   readonly characters: CharactersConfig;
 }
 
@@ -57,6 +59,7 @@ export function loadTokenServerConfig(env: NodeJS.ProcessEnv = process.env): Tok
     port: e.TOKEN_SERVER_PORT,
     corsOrigin: e.TOKEN_SERVER_CORS_ORIGIN,
     tokenTtl: e.TOKEN_TTL,
+    characterLinkSecret: e.CHARACTER_LINK_SECRET ?? e.LIVEKIT_API_SECRET,
     characters: { dir: e.CHARACTERS_DIR, defaultId: e.DEFAULT_CHARACTER },
   };
 }

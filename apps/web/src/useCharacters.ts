@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { type CharacterOption, fetchCharacters } from './token';
+import { type CharacterOption, fetchCharacters, InvalidCharacterLink } from './token';
 
 const STORAGE_KEY = 'ptoy.character';
 
@@ -20,35 +20,57 @@ function remember(id: string): void {
 }
 
 export interface CharacterPick {
-  /** Empty until the list loads, and stays empty if it fails (the call then gets the server default). */
+  /** Empty until loaded; only the homepage may fall back to the server default on failure. */
   readonly options: readonly CharacterOption[];
   readonly selectedId: string | undefined;
   readonly select: (id: string) => void;
+  readonly characterLink: string | undefined;
+  readonly locked: boolean;
+  readonly loading: boolean;
+  readonly error: string | undefined;
 }
 
 /** The character list from the token server, with the last pick remembered in this browser. */
 export function useCharacters(): CharacterPick {
   const [options, setOptions] = useState<readonly CharacterOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  const [characterLink] = useState(() => {
+    const values = new URLSearchParams(window.location.search).getAll('character');
+    return values.length > 1 ? '' : values[0];
+  });
+  const locked = characterLink !== undefined;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
 
   useEffect(() => {
     const abort = new AbortController();
-    fetchCharacters(abort.signal)
+    const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]);
+    fetchCharacters(signal, characterLink)
       .then((list) => {
-        const last = remembered();
+        if (abort.signal.aborted) return;
+        if (locked && (list.characters.length !== 1 || list.characters[0]?.id !== list.defaultId)) {
+          throw new InvalidCharacterLink();
+        }
+        const last = locked ? null : remembered();
         setOptions(list.characters);
         setSelectedId(list.characters.some((c) => c.id === last) ? (last as string) : list.defaultId);
       })
-      .catch(() => {
-        // No picker: the token server's default character answers the call.
-      });
+      .catch((error: unknown) => {
+        if (abort.signal.aborted) return;
+        if (locked) setError(error instanceof InvalidCharacterLink
+          ? '角色链接无效或已失效，请向分享者获取新链接。'
+          : '暂时无法加载角色，请刷新页面重试。');
+        // Only the homepage may still call using the server's default character.
+      })
+      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, []);
+  }, [characterLink, locked]);
 
   const select = (id: string) => {
+    if (locked || !options.some((character) => character.id === id)) return;
     setSelectedId(id);
     remember(id);
   };
 
-  return { options, selectedId, select };
+  return { options, selectedId, select, characterLink, locked, loading, error };
 }

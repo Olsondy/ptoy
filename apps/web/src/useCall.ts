@@ -6,7 +6,7 @@ import {
   createLocalAudioTrack,
 } from 'livekit-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchCallToken } from './token';
+import { fetchCallToken, InvalidCharacterLink } from './token';
 
 export type CallStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -77,7 +77,7 @@ export function useCall() {
   }, []);
 
   /** `character` undefined lets the token server pick its default. */
-  const start = useCallback(async (character?: string) => {
+  const start = useCallback(async (character?: string, characterLink?: string) => {
     if (activeRoom.current) return;
     const room = new Room();
     activeRoom.current = room;
@@ -109,7 +109,8 @@ export function useCall() {
       void room.startAudio();
       mic = await openMicrophone();
       if (!isCurrent()) throw new CallError('');
-      const token = await fetchCallToken(character).catch(() => {
+      const token = await fetchCallToken(character, undefined, characterLink).catch((error: unknown) => {
+        if (error instanceof InvalidCharacterLink) throw new CallError('角色链接无效或已失效，请向分享者获取新链接。');
         throw new CallError('无法获取通话凭证，请确认 token 服务已启动。');
       });
       if (!isCurrent()) throw new CallError('');

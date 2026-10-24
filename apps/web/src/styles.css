@@ -107,8 +107,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
 /* Compensate for the wordmark's descenders when aligning its visible ink. */
 .call-wordmark { font-size: 1.25rem; font-weight: 550; line-height: 1; letter-spacing: -0.03em; transform: translateY(-1px); }
 .call-wordmark > span { color: var(--muted-foreground); }
-.call-header-actions { display: flex; justify-content: flex-end; align-items: center; gap: 4px; min-height: 44px; }
+.call-header-actions { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 4px; min-height: 44px; }
 .call-header-actions svg { width: var(--call-header-icon-size); height: var(--call-header-icon-size); stroke-width: var(--call-header-icon-stroke); }
+.character-link-control { display: flex; }
+.character-link-feedback { position: absolute; z-index: 10; top: 100%; right: 0; width: max-content; max-width: min(280px, calc(100vw - 64px)); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); font-size: var(--call-type-label); line-height: 1.6; }
+.character-link-feedback p { margin: 0; }
+.character-link-url { display: block; margin-top: 8px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+.call-welcome h1 { overflow-wrap: anywhere; }
 .call-status { display: flex; align-items: center; gap: 8px; font-size: var(--call-type-label); line-height: 1.5; color: var(--muted-foreground); }
 .dot { width: 5px; height: 5px; border-radius: 50%; background: #777983; }
 .dot-connecting { background: #d5b47b; }

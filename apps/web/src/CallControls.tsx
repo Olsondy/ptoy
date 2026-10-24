@@ -7,9 +7,10 @@ interface CallControlsProps {
   status: CallStatus;
   error: string | undefined;
   onToggle: () => void;
+  disabled?: boolean;
 }
 
-export function CallControls({ status, error, onToggle }: CallControlsProps) {
+export function CallControls({ status, error, onToggle, disabled = false }: CallControlsProps) {
   const inCall = status !== 'disconnected';
   const callAction = inCall ? '挂断' : '开始通话';
   return (
@@ -21,7 +22,7 @@ export function CallControls({ status, error, onToggle }: CallControlsProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="icon" className={`call-toggle ${inCall ? 'is-active' : ''}`} data-testid="call-toggle"
-              aria-label={callAction} aria-pressed={inCall} onClick={onToggle}>
+              aria-label={callAction} aria-pressed={inCall} onClick={onToggle} disabled={disabled && !inCall}>
               {status === 'connecting' ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : inCall ? <PhoneOff aria-hidden="true" /> : <PhoneCall aria-hidden="true" />}
             </Button>
           </TooltipTrigger>

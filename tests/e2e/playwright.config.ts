@@ -28,6 +28,8 @@ const livekitEnv = {
   LIVEKIT_URL: livekitUrl,
   LIVEKIT_API_KEY: livekitApiKey,
   LIVEKIT_API_SECRET: livekitApiSecret,
+  CHARACTERS_DIR: fileURLToPath(new URL('./fixtures/characters', import.meta.url)),
+  DEFAULT_CHARACTER: 'xiaoyou',
 };
 
 type WebServer = NonNullable<Parameters<typeof defineConfig>[0]['webServer']>;
