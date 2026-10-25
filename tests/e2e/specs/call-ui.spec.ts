@@ -100,9 +100,14 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
     await page.goto('/');
     await dial();
     const agent = peer.localParticipant!;
+    await expect(page.getByTestId('caption-window')).toBeHidden();
+    const centeredOrb = await page.getByTestId('orb-slot').boundingBox();
+    await page.getByTestId('captions-toggle').click();
     await expect(page.getByTestId('caption-window')).toBeVisible();
+    const raisedOrb = await page.getByTestId('orb-slot').boundingBox();
+    expect(raisedOrb!.y + raisedOrb!.height / 2).toBeLessThan(centeredOrb!.y + centeredOrb!.height / 2);
     await expect(page.getByTestId('character-picker')).toBeDisabled();
-    await expect(page.getByText('在听你说', { exact: true })).toBeVisible();
+    await expect(page.getByText('在听你说', { exact: true })).toHaveClass('sr-only');
 
     // Revisions use a stable segment ID even though their stream IDs change.
     const sendUser = async (text: string) => {
@@ -127,7 +132,7 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('connected-desktop.png') });
 
     const longReply = await agent.streamText({ topic: 'lk.transcription', attributes: { 'lk.segment_id': 'agent-1' } });
-    await longReply.write('可以慢慢说，我会认真听。'.repeat(20) + '这是正在说的最后一句。');
+    await longReply.write('可以慢慢说，我会认真听。'.repeat(60) + '这是正在说的最后一句。');
     await longReply.close();
     const caption = page.getByTestId('agent-subtitle');
     await expect(caption).toContainText('这是正在说的最后一句。');
@@ -145,8 +150,28 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
       };
     })).toEqual({ clipped: true, latestVisible: true });
 
+    expect(await caption.evaluate(element => element.clientHeight / parseFloat(getComputedStyle(element).lineHeight))).toBeGreaterThan(5);
+    for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport);
+      await expect.poll(() => page.evaluate(() => {
+        const caption = document.querySelector('[data-testid="agent-subtitle"]')!.getBoundingClientRect();
+        const orb = document.querySelector('[data-testid="orb-slot"]')!.getBoundingClientRect();
+        const footer = document.querySelector('.call-footer')!.getBoundingClientRect();
+        return caption.bottom <= footer.top && caption.right <= innerWidth && caption.left >= 0
+          && (caption.top >= orb.bottom || caption.left >= orb.right)
+          && document.documentElement.scrollHeight <= innerHeight;
+      })).toBe(true);
+      await expect.poll(() => caption.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(1);
+      await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`long-caption-${viewport.width}x${viewport.height}.png`) });
+    }
+
     await page.getByTestId('captions-toggle').click();
     await expect(page.getByTestId('caption-window')).toBeHidden();
+    await expect.poll(() => page.evaluate(() => {
+      const orb = document.querySelector('[data-testid="orb-slot"]')!.getBoundingClientRect();
+      const stage = document.querySelector('.call-stage')!.getBoundingClientRect();
+      return Math.abs(orb.left + orb.width / 2 - (stage.left + stage.width / 2)) < 1;
+    })).toBe(true);
     await agent.setAttributes({ 'ptoy.agent_error': '回应暂时不可用，请稍后再试。', 'ptoy.stt_error': '没听清，再说一次吧。' });
     await expect(page.getByTestId('agent-error')).toBeVisible();
     await expect(page.getByTestId('stt-error')).toBeVisible();

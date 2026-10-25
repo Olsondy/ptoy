@@ -25,7 +25,7 @@ export function App() {
   const availability = useAvailability(access.authenticated);
   const call = useCall();
   const characters = useCharacters(access.authenticated || call.status !== 'disconnected');
-  const [captions, setCaptions] = useState(true);
+  const [captions, setCaptions] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const inCall = call.status !== 'disconnected';
@@ -67,19 +67,19 @@ export function App() {
               </TooltipTrigger><TooltipContent>{inCall ? '先挂断，再退出此设备' : '退出此设备'}</TooltipContent></Tooltip>
             </div>
           </header>
-          <section className="call-stage" aria-label="语音通话">
+          <section className="call-stage" data-captions={captions ? 'on' : 'off'} aria-label="语音通话">
             <div className="call-orb-status">
               <CallOrb room={call.room} status={call.status} />
               <p className="call-status sr-only" data-testid="call-status" data-status={call.status} aria-live="polite">
                 {STATUS_LABEL[call.status]}
               </p>
-              <div className="call-conversation">
-                {call.room ? <CallTranscript key={call.room.name} visible={captions} characterName={characterName} /> : (
-                  <h1 className="sr-only">{inCall ? '马上就好' : characters.locked
-                    ? characters.loading ? '正在加载角色' : characters.error ? '暂时无法开始通话' : `和${characterName}聊聊`
-                    : '想聊点什么？'}</h1>
-                )}
-              </div>
+            </div>
+            <div className="call-conversation">
+              {call.room ? <CallTranscript key={call.room.name} visible={captions} characterName={characterName} /> : (
+                <h1 className="sr-only">{inCall ? '马上就好' : characters.locked
+                  ? characters.loading ? '正在加载角色' : characters.error ? '暂时无法开始通话' : `和${characterName}聊聊`
+                  : '想聊点什么？'}</h1>
+              )}
             </div>
           </section>
           <CallControls status={call.status} error={characters.error ?? call.error ?? (logoutError || access.error || (!inCall && availability.error) || undefined)}

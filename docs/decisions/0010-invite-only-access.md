@@ -99,7 +99,7 @@ ptoy 面向维护者和少量受邀朋友，需要按人发放、重复使用和
 
 验证使用合成角色和本机 LiveKit，不读取真实角色文件；不等于公网 UDP/TURN、长期网络分区或云端模型容量已验收。故障验证入口为 Agent 的 `check:access-recovery` 命令，浏览器测试使用独立的 echo 环境。
 
-现有独立原型：`http://localhost:5741/invite-prototype.html`，启动命令 `pnpm --filter @ptoy/web dev --port 5741 --strictPort`。演示码为 `7K2M-9Q4R-X6WP-3T8N`，只用于本地演示。
+独立原型已统一归档至 [resources/prototypes](../../resources/prototypes/README.md)：[邀请码原型](../../resources/prototypes/invite.html)与[年龄确认原型](../../resources/prototypes/invite-age.html)均可直接用浏览器打开，不需要启动 Vite。演示码为 `7K2M-9Q4R-X6WP-3T8N`，只用于本地演示。
 
 原型使用独立 localStorage 数据模拟验证和 30 天记忆，不访问 API、麦克风或模型；审查面板不属于正式产品。它已演示撤销/到期不打断模拟通话，尚未覆盖多设备占用、真实连接中的撤销、服务端准入、异常恢复及退出此设备。原型不能作为这些能力已完成的证据。
 

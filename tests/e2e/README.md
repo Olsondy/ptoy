@@ -22,9 +22,11 @@ Playwright 用 Chrome 假麦克风（`--use-fake-ui-for-media-stream --use-fake-
 2. 浏览器（二选一）
    - Playwright 自带 Chromium：`pnpm --filter @ptoy/e2e exec playwright install chromium`
    - 本机 Google Chrome：`E2E_BROWSER_CHANNEL=chrome`。**macOS 12 必须用这个**，Playwright 已不再提供 mac12 的 Chromium。
-3. LiveKit Server 二进制（二选一）
-   - 设 `LIVEKIT_SERVER_BIN=<livekit-server 路径>`，测试自己启动 `--dev` 实例（默认端口 7890–7892，不与常规开发用的 7880 冲突）
-   - 或先自行运行 `livekit-server --dev`，测试连 `LIVEKIT_URL`（默认 `ws://localhost:7880`）；连不上会直接报错提示
+3. LiveKit Server（二选一，必须与日常应用及其他测试运行隔离）
+   - 设 `LIVEKIT_SERVER_BIN=<livekit-server 路径>`，测试自己启动 `--dev` 实例（默认端口 7890–7892，不与常规开发用的 7880 冲突）。未指定地址或二进制时，会依次查找仓库的 `deploy/windows/.run/livekit/` 和 `PATH`。
+   - 或自行启动专用于本轮测试的 LiveKit，并显式设置 `LIVEKIT_URL`。不再默认复用 7880 上的日常服务；找不到二进制且未指定地址时直接报错。
+
+   共享 LiveKit 会使未命名 Agent 参与同一轮自动分配。测试房间可能被日常 Agent 或另一轮测试 Agent 接走，无法向本轮 token 服务完成准入，页面便停留在“连接中”。字幕 UI 夹具手动创建 Agent，可能仍然通过，因此不能据此判断自动分配正常。
 
    获取 `livekit-server`：
    - Windows / Linux：从 [livekit/livekit Releases](https://github.com/livekit/livekit/releases) 下载对应平台的 zip / tar.gz，解压即用（Linux 也可 `curl -sSL https://get.livekit.io | bash`）
@@ -47,8 +49,8 @@ LIVEKIT_SERVER_BIN=/path/to/livekit-server E2E_BROWSER_CHANNEL=chrome pnpm test:
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `LIVEKIT_SERVER_BIN` | 未设 | 设了就由测试启动 LiveKit dev server |
-| `LIVEKIT_URL` | 设了 BIN 时 `ws://localhost:7890`，否则 `ws://localhost:7880` | LiveKit 地址（自启时端口取自这里，RTC 用 +1 TCP / +2 UDP） |
+| `LIVEKIT_SERVER_BIN` | 自动查找仓库二进制和 `PATH` | 由测试启动独立 LiveKit dev server |
+| `LIVEKIT_URL` | 自启时 `ws://localhost:7890` | 显式指定外部测试实例；同时设 BIN 时指定自启端口，RTC 用 +1 TCP / +2 UDP |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | `devkey` / `secret` | 与 `--dev` 固定值一致 |
 | `E2E_TOKEN_PORT` | `8730` | token 服务端口 |
 | `E2E_WEB_PORT` | `5730` | Vite 端口 |

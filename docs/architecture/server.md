@@ -198,7 +198,7 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 
 ## 9. 运维注意
 
-应用配置按环境保存在 `apps/agent/.env`、`apps/agent/.env.hk` 等文件中；`pnpm app --env hk` 及 Agent/Token 启动命令的 `--env hk` 只加载 `.env.hk`，不叠加或回退到本地 `.env`，进程环境变量仍可显式覆盖配置。省略 `--env` 保持原本地启动方式。当前 HK 配置通过 Tailscale 调用 Windows ASR（`http://100.90.8.73:8001`），LLM 与 TTS 使用 OpenRouter；生产 LiveKit 使用 `LIVEKIT_CONFIG` 指定的配置文件，不能用开发模式启动。真实环境文件不提交，本地 `.env` 保持不变。HK 已上线，当前操作入口为 [HK 部署说明](../../deploy/cloud/hk/README.md)，不使用旧安装器的 `/etc/ptoy/app.env`。
+应用配置按环境保存在 `apps/agent/.env`、`apps/agent/.env.hk` 等文件中；`pnpm app --env hk` 及 Agent/Token 启动命令的 `--env hk` 只加载 `.env.hk`，不叠加或回退到本地 `.env`，进程环境变量仍可显式覆盖配置。省略 `--env` 保持原本地启动方式。当前 HK 配置的 ASR、LLM 与 TTS 均使用 OpenRouter；ASR 为 `https://openrouter.ai/api` 的 `fish-audio/transcribe-1-pro`，已从本地 `.env` 单独同步 ASR 配置到 `.env.hk`；Tailscale 保留用于私网访问，不再是当前 ASR 的必经链路。生产 LiveKit 使用 `LIVEKIT_CONFIG` 指定的配置文件，不能用开发模式启动。真实环境文件不提交，本地 `.env` 保持不变。HK 已上线，当前操作入口为 [HK 部署说明](../../deploy/cloud/hk/README.md)，不使用旧安装器的 `/etc/ptoy/app.env`。
 
 HK 主机 `38.55.199.239` 的基础服务采用独立安装：Tailscale 来自官方 Ubuntu Jammy 稳定源，节点名 `ptoy-hk`，不接管系统 DNS；LiveKit 固定为 `1.13.10`，官方发布包经 SHA-256 校验后安装到 `/usr/local/bin/livekit-server`，由专用 `livekit` 用户及 `livekit-server.service` 运行，配置在 `/etc/livekit/livekit.yaml`，API 凭据与 `.env.hk` 一致。本机信令 `127.0.0.1:7880`，媒体 TCP 7881 / UDP 7882，公网候选地址 `38.55.199.239`，不启用 TURN。保留现有 LiteSpeed、PHP、MariaDB；TLS 反代复用现有 OpenLiteSpeed。此独立服务与原安装器的 `ptoy-livekit.service` 不能同时启动，后续部署应复用已安装服务或显式迁移。
 

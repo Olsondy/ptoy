@@ -20,9 +20,19 @@ function CaptionText({ text, speaker }: { text: string; speaker: string }) {
     const el = ref.current;
     if (el && following.current) el.scrollTop = el.scrollHeight;
   }, [text]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Keep live words visible when the caption area changes size or is reopened.
+    const observer = new ResizeObserver(() => {
+      if (following.current && el.clientHeight) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const onScroll = () => {
     const el = ref.current;
-    if (el) following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+    if (el?.clientHeight) following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
   };
   return (
     <p ref={ref} onScroll={onScroll} data-testid={`${speaker}-subtitle`} data-state="text" aria-live="polite">

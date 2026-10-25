@@ -9,10 +9,11 @@ unauthenticatedTest('未验证不探测通话服务，验证成功后才开始�
     return route.fulfill({ json: { available: true } });
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '很高兴你来' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '邀请验证' })).toBeVisible();
   expect(requests).toBe(0);
   await page.getByLabel('邀请码', { exact: true }).fill(invitation.code);
-  await page.getByRole('button', { name: '验证并进入' }).click();
+  await page.getByRole('checkbox', { name: /我已满 18 周岁/ }).check();
+  await page.getByRole('button', { name: '进入', exact: true }).click();
   await expect(page.getByTestId('call-toggle')).toBeEnabled();
   expect(requests).toBeGreaterThan(0);
 });

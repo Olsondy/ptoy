@@ -1,21 +1,32 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 /**
  * Smoke test stack: LiveKit dev server → token server → echo agent → Vite web app.
  *
  * Defaults use ports that differ from the regular `pnpm dev:*` ports so the test never
  * reuses a dev server that happens to be running from another checkout. Every server is
- * started fresh and torn down by Playwright; LiveKit is started only when
- * LIVEKIT_SERVER_BIN is set, otherwise an already-running server at LIVEKIT_URL is used.
+ * started fresh and torn down by Playwright. An external LiveKit must be selected
+ * explicitly with LIVEKIT_URL and dedicated to this test run.
  */
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 const env = process.env;
-const livekitServerBin = env.LIVEKIT_SERVER_BIN;
+const executable = process.platform === 'win32' ? 'livekit-server.exe' : 'livekit-server';
+const localLivekit = [
+  join(repoRoot, 'deploy', 'windows', '.run', 'livekit', executable),
+  ...(env.PATH ?? '').split(delimiter).filter(Boolean).map(directory => join(directory, executable)),
+].find(path => existsSync(path));
+const livekitServerBin = env.LIVEKIT_SERVER_BIN || (!env.LIVEKIT_URL ? localLivekit : undefined);
+if (!livekitServerBin && !env.LIVEKIT_URL) {
+  throw new Error('Set LIVEKIT_SERVER_BIN to start an isolated LiveKit, or LIVEKIT_URL to a dedicated test instance. Sharing the app server can dispatch calls to the wrong Agent.');
+}
 // A LiveKit we start ourselves gets its own port so it never clashes with a `livekit-server --dev` on 7880.
-const livekitUrl = env.LIVEKIT_URL ?? (livekitServerBin ? 'ws://localhost:7890' : 'ws://localhost:7880');
+const livekitUrl = env.LIVEKIT_URL ?? 'ws://localhost:7890';
+// Fixtures must use the same endpoint when the binary was discovered automatically.
+env.LIVEKIT_URL = livekitUrl;
 const livekitApiKey = env.LIVEKIT_API_KEY ?? 'devkey';
 const livekitApiSecret = env.LIVEKIT_API_SECRET ?? 'secret';
 const tokenPort = Number(env.E2E_TOKEN_PORT ?? 8730);

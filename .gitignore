@@ -10,6 +10,7 @@ __pycache__/
 .scratch/
 .worktree/
 .data/
+.impeccable/review/
 
 # Local Windows deployment config and runtime files
 /deploy/windows/config.ps1
