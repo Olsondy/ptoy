@@ -28,6 +28,14 @@
  *   --tts-ms 300           fake TTS: synthesis time per segment (raise it to barge in while the
  *                          reply is still pending after the filler)
  *   --pause-ms 400         "~" in a turn is a pause of this length inside the caller's speech
+ *   --ambience "low|mid||idle"
+ *                          with the fake LLM: each turn's reply opens with that `<bg:…>` tag (empty =
+ *                          none, "wild" = an unknown level). Runs a synthetic character with
+ *                          `ambience: true` and synthetic loops (one tone volume per level) and checks
+ *                          the caller's `background_audio` track: the level changes only once the
+ *                          reply is heard, an untagged / unknown / barged-in-before-playing reply keeps
+ *                          it, subtitles never show the tag. `--ambience none`: the same character
+ *                          without `ambience`, so no background track may be published.
  * Env: SIM_LOG_LEVEL=debug sets the agent's log level, SIM_DUMP=1 prints every agent log line.
  * LIVEKIT_SERVER_BIN starts a throwaway livekit-server --dev on :7900; otherwise LIVEKIT_URL
  * (+ key/secret) must point at a running server. The rest comes from apps/agent/.env.
@@ -38,7 +46,7 @@ import type { RemoteParticipant, RemoteTrack } from '@livekit/rtc-node';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { type AddressInfo, createServer } from 'node:net';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -75,6 +83,7 @@ const { values } = parseArgs({
     'max-stop-ms': { type: 'string', default: '300' },
     'tts-ms': { type: 'string', default: '300' },
     'pause-ms': { type: 'string', default: '400' },
+    ambience: { type: 'string' },
   },
 });
 /** What the caller says per turn; "~" marks a pause inside the turn. */
@@ -91,6 +100,9 @@ const bargedTurn = bargeInMs === undefined ? -1 : turns.length - 2;
 const bargingTurn = bargeInMs === undefined ? -1 : turns.length - 1;
 const bargesWithBackchannel = bargingTurn >= 0 && isBackchannel(spokenText(turns[bargingTurn] ?? ''));
 const maxStopMs = Number(values['max-stop-ms']);
+/** `--ambience`: per-turn reply tags, or `[]` for `none` (character without ambience). */
+const ambienceTags = values.ambience === undefined ? undefined : values.ambience === 'none' ? [] : values.ambience.split('|').map((t) => t.trim());
+if (ambienceTags && !fakes.has('llm')) throw new Error('--ambience needs --fake llm');
 if (bargeInMs !== undefined && turns.length < 3) throw new Error('--barge-in needs at least 3 turns');
 const agentDir = fileURLToPath(new URL('..', import.meta.url));
 
@@ -125,7 +137,10 @@ async function main(): Promise<number> {
         const last = (messages.at(-1)?.content ?? '').replace(TONE_PREFIX, '');
         if (messages.some((m) => m.content.includes('\uFEFF'))) return ['历史里混进了字幕分隔符。'];
         // Per-sentence tags, one split across tokens, one invalid (→ 平静).
-        return ['[喜]', '收到', '，你说的是', `“${last}”。`, '[哀', ']还想', '聊点', '什么？', '[开心]随便', '说说。'];
+        const reply = ['[喜]', '收到', '，你说的是', `“${last}”。`, '[哀', ']还想', '聊点', '什么？', '[开心]随便', '说说。'];
+        const tag = ambienceTags?.[turns.findIndex((t) => spokenText(t) === last)];
+        // The ambience tag split across tokens too.
+        return tag ? ['<bg:', `${tag}>`, ...reply] : reply;
       },
       tokenDelayMs: 20,
     });
@@ -144,6 +159,7 @@ async function main(): Promise<number> {
     env.TTS_REF_AUDIO = ref;
   }
   cleanups.push(() => Promise.all(servers.map((s) => s.close())).then(() => undefined));
+  if (ambienceTags) writeAmbienceFixture(scratch, env, ambienceTags.length > 0);
 
   // ---- LiveKit ----
   if (process.env.LIVEKIT_SERVER_BIN) {
@@ -273,8 +289,22 @@ async function main(): Promise<number> {
     if (p.identity === room.localParticipant?.identity) return;
     watch(p as RemoteParticipant);
   });
+  /** The background track's loudness, one [time, rms] per frame. */
+  const ambienceRms: [number, number][] = [];
+  let ambienceTrack = false;
   room.on(RoomEvent.TrackSubscribed, (remote: RemoteTrack) => {
     if (remote.kind !== TrackKind.KIND_AUDIO) return;
+    if (remote.name === BACKGROUND_TRACK) {
+      ambienceTrack = true;
+      void (async () => {
+        for await (const frame of new AudioStream(remote, { sampleRate: SAMPLE_RATE, numChannels: 1 })) {
+          let sum = 0;
+          for (const v of frame.data) sum += v * v;
+          ambienceRms.push([Date.now(), Math.sqrt(sum / Math.max(1, frame.data.length))]);
+        }
+      })();
+      return;
+    }
     void (async () => {
       for await (const frame of new AudioStream(remote, { sampleRate: SAMPLE_RATE, numChannels: 1 })) {
         let peak = 0;
@@ -340,6 +370,8 @@ async function main(): Promise<number> {
     subtitleStartVsAudioMs?: number;
     subtitleEndVsAudioMs?: number;
     error: string;
+    /** When the reply's subtitle started (≈ its playout start, subtitles follow the audio). */
+    replyAt?: number;
   }[] = [];
   /** Absolute times per turn: caller speech start / end. */
   const spans: { startAt: number; endAt: number }[] = [];
@@ -400,6 +432,7 @@ async function main(): Promise<number> {
       subtitleStartVsAudioMs: firstAudioAt && subtitleFirstAt ? subtitleFirstAt - firstAudioAt : undefined,
       subtitleEndVsAudioMs: firstAudioAt && subtitleLastAt ? subtitleLastAt - lastAudioAt : undefined,
       error: agentError,
+      ...(subtitleFirstAt && { replyAt: subtitleFirstAt }),
     });
     out(
       `turn ${i + 1}: said "${sentence}" → ${firstAudioAt ? `audio after ${firstAudioAt - stoppedAt}ms` : 'NO AUDIO'}` +
@@ -426,6 +459,7 @@ async function main(): Promise<number> {
   if (!expectFailure && bargingTurn >= 0) {
     problems.push(...checkBargeIn({ spans, allBursts, subtitleStreams, timings, llmRequests: fakes.has('llm') ? llmRequests : undefined }));
   }
+  if (ambienceTags) problems.push(...checkAmbience(results, ambienceRms, ambienceTrack));
   for (const p of problems) out(`CHECK FAILED: ${p}`);
   ok &&= problems.length === 0;
   if (!ok || process.env.SIM_DUMP) {
@@ -505,7 +539,7 @@ function checkTurns(
       return;
     }
     if (i === bargingTurn && bargesWithBackchannel) return;
-    if (/[[\]【】]/u.test(r.heard)) problems.push(`turn ${i + 1}: subtitle has a tag: "${r.heard}"`);
+    if (/[[\]【】<>]/u.test(r.heard)) problems.push(`turn ${i + 1}: subtitle has a tag: "${r.heard}"`);
     // A reply dropped before it played can flash its first character as a subtitle (known, cosmetic).
     const heard = i === bargingTurn ? (r.heard.split(' / ').at(-1) ?? '') : r.heard;
     if (heard !== r.heard) out(`NOTE turn ${i + 1}: dropped reply flashed subtitle "${r.heard.split(' / ')[0]}"`);
@@ -591,6 +625,75 @@ function checkBargeIn(f: BargeInFacts): string[] {
   if (Math.abs([...history].length - expected) > 3) {
     problems.push(`barge-in: history has ${[...history].length} chars, ~${expected} were played (${playedMs}ms)`);
   }
+  return problems;
+}
+
+const BACKGROUND_TRACK = 'background_audio';
+/** Synthetic loop per level: a 220 Hz tone whose loudness tells the levels apart (idle = silence). */
+const AMBIENCE_FIXTURE: Record<string, number> = { idle: 0, low: 2000, mid: 4000, high: 8000, climax: 12000 };
+const AMBIENCE_FADE_MS = 200;
+
+/** A synthetic character (`ambience` on or off) and an AMBIENCE_DIR with tone loops. */
+function writeAmbienceFixture(scratch: string, env: NodeJS.ProcessEnv, enabled: boolean): void {
+  const characters = join(scratch, 'characters');
+  mkdirSync(characters);
+  copyFileSync(join(agentDir, 'prompts', 'characters', '_rules.md'), join(characters, '_rules.md'));
+  writeFileSync(
+    join(characters, 'sim.md'),
+    `---\nname: 模拟\ndescription: sim:call\nvoice: xiaoyou-default\ntts_backends: gradio, fastapi, openrouter\n${enabled ? 'ambience: true\n' : ''}---\n你是模拟通话里的测试角色。\n`,
+  );
+  const dir = join(scratch, 'ambience');
+  mkdirSync(dir);
+  const levels = Object.entries(AMBIENCE_FIXTURE).map(([id, amplitude]) => {
+    if (amplitude === 0) return { id, description: `${id} 档` };
+    const samples = new Int16Array(48000 * 2);
+    for (let i = 0; i < samples.length; i++) samples[i] = Math.round(Math.sin((2 * Math.PI * 220 * i) / 48000) * amplitude);
+    writeFileSync(join(dir, `${id}.wav`), encodeWav({ samples, sampleRate: 48000, channels: 1 }));
+    return { id, description: `${id} 档`, file: `${id}.wav`, volume: 1 };
+  });
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ fadeMs: AMBIENCE_FADE_MS, layers: [{ id: 'intensity', tag: 'bg', levels }] }));
+  env.CHARACTERS_DIR = characters;
+  env.DEFAULT_CHARACTER = 'sim';
+  env.AMBIENCE_DIR = dir;
+}
+
+/** Which fixture level a background RMS is (a sine's RMS is amplitude / √2). */
+function ambienceLevelOf(rms: number): string {
+  let best = 'idle';
+  for (const [id, amplitude] of Object.entries(AMBIENCE_FIXTURE)) {
+    if (Math.abs(amplitude / Math.SQRT2 - rms) < Math.abs((AMBIENCE_FIXTURE[best] ?? 0) / Math.SQRT2 - rms)) best = id;
+  }
+  return best;
+}
+
+const meanRms = (series: readonly [number, number][], from: number, to: number) => {
+  const inWindow = series.filter(([t]) => t >= from && t < to);
+  return inWindow.length === 0 ? undefined : inWindow.reduce((n, [, r]) => n + r, 0) / inWindow.length;
+};
+
+/**
+ * `--ambience`: the background level just before each reply is heard is the one the previous heard
+ * reply left, and shortly after it is this reply's tag (unless untagged, unknown or barged in
+ * before playing). `none`: no background track at all.
+ */
+function checkAmbience(results: readonly { replyAt?: number }[], series: readonly [number, number][], published: boolean): string[] {
+  if (ambienceTags?.length === 0) return published ? ['ambience: a character without `ambience` published a background track'] : [];
+  if (!published) return ['ambience: no background track'];
+  const problems: string[] = [];
+  let level = 'idle';
+  results.forEach((r, i) => {
+    if (i === bargedTurn) return;
+    const tag = ambienceTags?.[i] ?? '';
+    const want = tag in AMBIENCE_FIXTURE ? tag : level;
+    if (r.replyAt === undefined) return void problems.push(`ambience turn ${i + 1}: no reply heard`);
+    const before = meanRms(series, r.replyAt - 450, r.replyAt - 150);
+    const after = meanRms(series, r.replyAt + AMBIENCE_FADE_MS + 400, r.replyAt + AMBIENCE_FADE_MS + 900);
+    const got = [before, after].map((v) => (v === undefined ? 'no audio' : ambienceLevelOf(v)));
+    out(`ambience turn ${i + 1}: tag "${tag}" → before reply ${got[0]}, after ${got[1]} (expected ${level} → ${want})`);
+    if (got[0] !== level) problems.push(`ambience turn ${i + 1}: ${got[0]} before the reply was heard, expected ${level}`);
+    if (got[1] !== want) problems.push(`ambience turn ${i + 1}: ${got[1]} after the reply started, expected ${want}`);
+    level = want;
+  });
   return problems;
 }
 

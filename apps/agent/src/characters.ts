@@ -40,6 +40,8 @@ export interface Character extends CharacterSummary {
   readonly tts: TtsTuning;
   /** TTS backends this character's voice exists on (`tts_backends`); default the IndexTTS ones. */
   readonly ttsBackends: readonly TtsBackendName[];
+  /** Background ambience follows the reply's `<bg:…>` tags (`ambience: true`, ADR 0013); default off. */
+  readonly ambience: boolean;
   /** Full system prompt: the persona followed by the shared call rules. */
   readonly instructions: string;
 }
@@ -109,10 +111,16 @@ function parseTtsBackends(id: string, raw: string | undefined): readonly TtsBack
   return names as TtsBackendName[];
 }
 
+function parseFlag(id: string, key: string, raw: string | undefined): boolean {
+  if (raw === undefined || raw === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  throw new Error(`Character "${id}" has \`${key}: ${raw}\`; expected true or false`);
+}
+
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
 /**
- * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n[tts_backends: …]\n---\n<persona>`;
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n[tts_backends: …]\n[ambience: true]\n---\n<persona>`;
  * only flat `key: value` lines are supported.
  */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
@@ -138,6 +146,7 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
     voice,
     tts,
     ttsBackends: parseTtsBackends(id, fields.get('tts_backends')),
+    ambience: parseFlag(id, 'ambience', fields.get('ambience')),
     instructions: shared ? `${persona}\n\n${shared}` : persona,
   };
 }

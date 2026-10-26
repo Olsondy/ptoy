@@ -129,6 +129,8 @@ TTS_OPENROUTER_MODEL=fish-audio/s2.1-pro
 TTS_OPENROUTER_VOICES=rouyi=<fish voice id>
 DEFAULT_CHARACTER=rouyi
 FILLERS_ENABLED=false
+# 可选：背景音素材目录（不进 Git，单独上传），见 services/ambience/README.md
+# AMBIENCE_DIR=/var/lib/ptoy/resources/ambience
 ```
 
 - 页面只列出 `tts_backends` 包含当前 `TTS_BACKEND` 的角色。内置角色缺省只用于 IndexTTS，Fish 模式下只有 `rouyi`；其他角色要在角色文件里加 `openrouter` 并在 `TTS_OPENROUTER_VOICES` 映射音色，`DEFAULT_CHARACTER` 也必须是可用角色，否则启动报错。

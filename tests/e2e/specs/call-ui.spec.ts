@@ -44,6 +44,13 @@ test('角色菜单：键盘选择、焦点恢复、窄屏与保存', async ({ pa
   await expect(picker).toBeFocused();
   await expect(page.getByTestId('microphone-toggle')).toHaveCount(0);
   await page.setViewportSize({ width: 320, height: 568 });
+  // Every header action fits the narrowest screen with a 44px target.
+  await expect.poll(() => page.locator('.call-header-actions').evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const targets = [...element.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+    return bounds.left >= 0 && bounds.right <= innerWidth && targets.every((t) => t.width >= 44 && t.height >= 44);
+  })).toBe(true);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('header-320.png') });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(() => page.getByRole('group', { name: '通话控制' }).evaluate((element) => {
     const bounds = element.getBoundingClientRect();
@@ -100,6 +107,16 @@ test('通话字幕：流式更新、开关、错误提示及清空', async ({ pa
     await page.goto('/');
     await dial();
     const agent = peer.localParticipant!;
+    // Background ambience (ADR 0013): on by default, toggled by click or keyboard, call unaffected.
+    const ambience = page.getByTestId('ambience-toggle');
+    await expect(ambience).toHaveAccessibleName('背景音');
+    await expect(ambience).toHaveAttribute('aria-pressed', 'true');
+    await ambience.click();
+    await expect(ambience).toHaveAttribute('aria-pressed', 'false');
+    await ambience.focus();
+    await page.keyboard.press('Space');
+    await expect(ambience).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('call-status')).toHaveAttribute('data-status', 'connected');
     await expect(page.getByTestId('caption-window')).toBeHidden();
     const centeredOrb = await page.getByTestId('orb-slot').boundingBox();
     await page.getByTestId('captions-toggle').click();

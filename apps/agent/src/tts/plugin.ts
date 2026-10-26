@@ -10,6 +10,8 @@ export interface IndexTTSOptions {
   readonly sampleRate: number;
   /** Segmentation of `stream()` input; defaults to the `@ptoy/segmenter` defaults (short first segment). */
   readonly segmenter?: SegmenterOptions;
+  /** Gets each `stream()` reply's first `<bg:…>` level (ADR 0013), before its audio is synthesized. */
+  readonly onAmbience?: (level: string) => void;
 }
 
 /** Interleaved s16 → mono by averaging channels. */
@@ -71,6 +73,7 @@ export class IndexTTS extends tts.TTS {
   label = 'ptoy.IndexTTS';
   readonly #backend: TtsBackend;
   readonly #segmenter: SegmenterOptions | undefined;
+  readonly #onAmbience: ((level: string) => void) | undefined;
   readonly #logger = log().child({ tts: 'indextts' });
   /** Tail of the serialization chain. */
   #lock: Promise<void> = Promise.resolve();
@@ -79,6 +82,7 @@ export class IndexTTS extends tts.TTS {
     super(opts.sampleRate, 1, { streaming: true, alignedTranscript: true });
     this.#backend = opts.backend;
     this.#segmenter = opts.segmenter;
+    this.#onAmbience = opts.onAmbience;
   }
 
   override get model(): string {
@@ -108,7 +112,7 @@ export class IndexTTS extends tts.TTS {
   }
 
   stream(options?: { connOptions?: APIConnectOptions }): tts.SynthesizeStream {
-    return new SegmentedSynthesizeStream(this, this.#segmenter, options?.connOptions);
+    return new SegmentedSynthesizeStream(this, this.#segmenter, options?.connOptions, this.#onAmbience);
   }
 
   /**

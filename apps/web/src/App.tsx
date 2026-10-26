@@ -4,6 +4,7 @@ import { RoomAudioRenderer, RoomContext } from '@livekit/components-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { CallControls } from './CallControls';
+import { AmbienceToggle } from './AmbienceToggle';
 import { CaptionsToggle } from './CaptionsToggle';
 import { CallTranscript } from './CallTranscript';
 import { CharacterPicker } from './CharacterPicker';
@@ -15,6 +16,7 @@ import { useAccess } from './useAccess';
 import { InviteGate } from './InviteGate';
 import { accessErrorMessage } from './token';
 import { useAvailability } from './useAvailability';
+import { useBackgroundAudio } from './useBackgroundAudio';
 
 const STATUS_LABEL: Record<CallStatus, string> = {
   disconnected: '已断开', connecting: '连接中', connected: '通话中',
@@ -26,6 +28,8 @@ export function App() {
   const call = useCall();
   const characters = useCharacters(access.authenticated || call.status !== 'disconnected');
   const [captions, setCaptions] = useState(false);
+  const [ambience, setAmbience] = useState(true);
+  useBackgroundAudio(call.room, ambience);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const inCall = call.status !== 'disconnected';
@@ -59,6 +63,7 @@ export function App() {
               {!characters.locked && characters.selectedId && <CharacterLinkButton key={characters.selectedId}
                 characterId={characters.selectedId} characterName={characterName} disabled={inCall} />}
               <CaptionsToggle visible={captions} onVisibleChange={setCaptions} />
+              <AmbienceToggle enabled={ambience} onEnabledChange={setAmbience} />
               <Tooltip><TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-11 rounded-full text-muted-foreground"
                   aria-label="退出此设备" disabled={inCall || loggingOut} onClick={() => void logout()}>

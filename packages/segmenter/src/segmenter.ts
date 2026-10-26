@@ -5,6 +5,11 @@ export interface Segment {
   /** Clean text for TTS and subtitles: trimmed, never empty, never contains tags. */
   readonly text: string;
   readonly emotion: Emotion;
+  /**
+   * Background-ambience level from the reply's first `<bg:…>` tag (ADR 0013), as written: the
+   * caller checks it against its levels. Absent until the reply has such a tag.
+   */
+  readonly ambience?: string;
 }
 
 export interface SegmenterOptions {
@@ -63,6 +68,17 @@ const LEADING_INTERJECTION = /^(?:嗯+|哦+|噢+|喔+|唔+|啊|好的|好呀|好
 const TAG_OPEN = new Set(["[", "【"]);
 const TAG_CLOSE = new Set(["]", "】"]);
 
+/**
+ * `<key:value>` directive tags (ADR 0013): removed from the text and never cut a segment.
+ * Only `<bg:level>` is used; other keys are dropped. Anything that cannot grow into one ("<3",
+ * "a<b") is literal text at once, so a stray "<" never holds the reply back.
+ */
+const DIRECTIVE_OPEN = "<";
+const DIRECTIVE_CLOSE = ">";
+const DIRECTIVE = /^([A-Za-z]+):([A-Za-z0-9_-]*)$/;
+const DIRECTIVE_PREFIX = /^[A-Za-z]*(?::[A-Za-z0-9_-]*)?$/;
+const AMBIENCE_KEY = "bg";
+
 export interface Segmenter {
   /** Feed one LLM token (any chunking). Returns segments that became complete. */
   push(token: string): Segment[];
@@ -102,6 +118,8 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   let tagged = false;
   /** Interjections dropped from the reply start, spoken only if nothing else follows. */
   let dropped = "";
+  /** The reply's first `<bg:…>` value. */
+  let ambience: string | undefined;
 
   /**
    * Find the next cut in the buffer, or null if more input is needed.
@@ -148,8 +166,12 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
       }
       clean = normalize(rest);
     }
-    out.push({ text: clean, emotion });
+    out.push(segment(clean));
     firstDone = true;
+  }
+
+  function segment(text: string): Segment {
+    return ambience === undefined ? { text, emotion } : { text, emotion, ambience };
   }
 
   function drain(out: Segment[]): void {
@@ -177,14 +199,42 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     tagged = true;
   }
 
-  /** Split raw input into text and tags; an incomplete "[..." at the end is kept in `pending`. */
+  /**
+   * At `raw[open] === "<"`: the index after a complete directive (applied), `"pending"` if the end of
+   * input may still complete one, or `"literal"`.
+   */
+  function directive(raw: string, open: number): number | "pending" | "literal" {
+    const close = raw.indexOf(DIRECTIVE_CLOSE, open + 1);
+    const body = raw.slice(open + 1, close === -1 ? undefined : close);
+    if (body.length > opts.maxTagChars) return "literal";
+    if (close === -1) return DIRECTIVE_PREFIX.test(body) ? "pending" : "literal";
+    const m = DIRECTIVE.exec(body);
+    if (!m) return "literal";
+    if (m[1] === AMBIENCE_KEY && ambience === undefined && m[2]) ambience = m[2];
+    return close + 1;
+  }
+
+  /** Split raw input into text and tags; an incomplete "[..." or "<bg:..." at the end is kept in `pending`. */
   function consume(raw: string, out: Segment[]): void {
     let i = 0;
     while (i < raw.length) {
       let open = i;
-      while (open < raw.length && !TAG_OPEN.has(raw[open]!)) open++;
+      while (open < raw.length && !TAG_OPEN.has(raw[open]!) && raw[open] !== DIRECTIVE_OPEN) open++;
       if (open > i) pushText(raw.slice(i, open), out);
       if (open === raw.length) return;
+
+      if (raw[open] === DIRECTIVE_OPEN) {
+        const next = directive(raw, open);
+        if (next === "pending") {
+          pending = raw.slice(open);
+          return;
+        }
+        if (next === "literal") {
+          pushText(DIRECTIVE_OPEN, out);
+          i = open + 1;
+        } else i = next;
+        continue;
+      }
 
       let close = open + 1;
       let literal = false;
@@ -216,6 +266,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     emotion = DEFAULT_EMOTION;
     tagged = false;
     dropped = "";
+    ambience = undefined;
   }
 
   return {
@@ -228,9 +279,12 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     },
     end() {
       const out: Segment[] = [];
+      // A "<bg:mi" the reply ended on never became a directive: it was text.
+      if (pending.startsWith(DIRECTIVE_OPEN)) pushText(pending, out);
+      pending = "";
       drain(out);
       emit(buffer, out);
-      if (!firstDone && dropped) out.push({ text: dropped, emotion });
+      if (!firstDone && dropped) out.push(segment(dropped));
       clear();
       return out;
     },

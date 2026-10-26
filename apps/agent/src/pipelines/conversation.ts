@@ -13,7 +13,10 @@ import {
 import type { AudioFrame } from '@livekit/rtc-node';
 import { DEFAULT_EMOTION, type Emotion, type SegmenterOptions } from '@ptoy/segmenter';
 import { existsSync } from 'node:fs';
-import { ATTRIBUTE_CHARACTER, loadCharacters } from '../characters.js';
+import { AmbienceBed } from '../ambience/bed.js';
+import { AmbienceDirector } from '../ambience/director.js';
+import { type Ambience, ambienceRules, loadAmbience } from '../ambience/manifest.js';
+import { ATTRIBUTE_CHARACTER, type Character, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
 import { UserToneTracker, withUserTone } from '../emotion/user-tone.js';
 import { createLlm, withReasoningEffort } from '../llm/index.js';
@@ -104,7 +107,8 @@ export interface LlmReplyLog {
   readonly cancelled: boolean;
 }
 
-const FIRST_TAG = /^\s*[[【]([^\]】]{1,10})[\]】]/;
+/** The reply's leading emotion tag, after any `<bg:…>` directive (ADR 0013). */
+const FIRST_TAG = /^\s*(?:<[^<>]{1,24}>\s*)*[[【]([^\]】]{1,10})[\]】]/;
 
 /** Passes LLM chunks through and reports the full raw text once the stream ends or is cancelled. */
 function captureReply(onDone: (reply: string, cancelled: boolean) => void): TransformStream<llm.ChatChunk | string, llm.ChatChunk | string> {
@@ -140,6 +144,7 @@ class CharacterAgent extends voice.Agent {
   readonly #fillers: FillerHooks | undefined;
   readonly #toneOf: (userText: string) => Emotion;
   readonly #onReply: (entry: LlmReplyLog) => void;
+  readonly #ambience: AmbienceDirector | undefined;
   /** Signals the current turn's reply audio is ready (first TTS frame); set per filler turn. */
   #replyAudioReady: (() => void) | undefined;
 
@@ -148,11 +153,14 @@ class CharacterAgent extends voice.Agent {
     toneOf: (userText: string) => Emotion,
     onReply: (entry: LlmReplyLog) => void,
     fillers?: FillerHooks,
+    /** Ambience (ADR 0013): told when a reply's TTS starts; tags the request's history. */
+    ambience?: AmbienceDirector,
   ) {
     super(options);
     this.#toneOf = toneOf;
     this.#onReply = onReply;
     this.#fillers = fillers;
+    this.#ambience = ambience;
   }
 
   /**
@@ -161,7 +169,8 @@ class CharacterAgent extends voice.Agent {
    * The raw tagged reply is reported to `onReply` for the `llm reply` log line.
    */
   override async llmNode(chatCtx: ChatContext, toolCtx: llm.ToolContext, modelSettings: ModelSettings) {
-    const ctx = withUserTone(chatCtx, this.#toneOf);
+    const toned = withUserTone(chatCtx, this.#toneOf);
+    const ctx = this.#ambience ? this.#ambience.withTaggedHistory(toned) : toned;
     const stream = await voice.Agent.default.llmNode(this, ctx, toolCtx, modelSettings);
     if (!stream) return stream;
     const last = ctx.items.at(-1);
@@ -203,6 +212,7 @@ class CharacterAgent extends voice.Agent {
 
   /** Reply audio passes through unchanged; its first frame tells a held filler to stand down. */
   override async ttsNode(text: ReadableStream<string> | AsyncIterable<string>, modelSettings: ModelSettings) {
+    this.#ambience?.replyGenerating();
     const ready = this.#replyAudioReady;
     const audio = await voice.Agent.default.ttsNode(this, text, modelSettings);
     if (!audio || !ready) return audio;
@@ -222,6 +232,17 @@ class CharacterAgent extends voice.Agent {
   ) {
     const stream = await voice.Agent.default.transcriptionNode(this, text, modelSettings);
     return stream ? stream.pipeThrough(addWordBreaks()) : null;
+  }
+}
+
+/** The character's ambience, or why it has none (ADR 0013). */
+function characterAmbience(character: Character, dir: string | undefined): { ambience?: Ambience; reason?: string } {
+  if (!character.ambience) return {};
+  if (dir === undefined) return { reason: 'AMBIENCE_DIR is not set' };
+  try {
+    return { ambience: loadAmbience(dir) };
+  } catch (error) {
+    return { reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -247,6 +268,11 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   if (requested !== undefined && requested !== character.id) {
     logger.warn({ requested, character: character.id }, 'unknown character, using the default');
   }
+  const { ambience, reason: noAmbience } = characterAmbience(character, config.ambienceDir);
+  if (noAmbience) logger.warn({ character: character.id, reason: noAmbience }, 'ambience disabled for this call');
+  const bed = ambience && new AmbienceBed(ambience);
+  const director =
+    bed && ambience && new AmbienceDirector(bed, ambience, (change) => logger.info({ ambience: change }, 'ambience'));
 
   const timing = new TurnTimingTracker((turn) => logger.info({ turn }, 'turn timing'));
   let asrEmotion: string | undefined;
@@ -279,6 +305,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     backend: createTtsBackend(config.tts, character.voice, character.tts),
     sampleRate: config.audioSampleRate,
     segmenter: REPLY_SEGMENTER,
+    ...(director && { onAmbience: (level: string) => director.tagged(level) }),
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();
@@ -308,11 +335,15 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     onFillerStart: (at) => timing.onFillerStart(at),
     onReplyDropped: (id) => logger.info({ speechId: id }, 'caller spoke over the filler, queued reply dropped'),
   });
+  // Fillers being played: their audio starting is not the reply starting (ambience switch point).
+  const fillerSpeeches = new Set<voice.SpeechHandle>();
   const fillerHooks: FillerHooks | undefined = fillerBank && {
     bank: fillerBank,
     asrEmotion: () => asrEmotion,
     delayMs: config.fillers?.delayMs ?? 0,
     onPlay: (f, handle) => {
+      fillerSpeeches.add(handle);
+      handle.addDoneCallback(() => fillerSpeeches.delete(handle));
       fillerGuard.fillerQueued(handle);
       timing.onFiller(f.id, f.durationMs);
       logger.debug({ filler: f.id, group: f.group, text: f.text, durationMs: f.durationMs }, 'filler queued');
@@ -371,7 +402,12 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   });
   session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
     if (!fillerGuard.agentState(ev.newState, ev.createdAt)) timing.onAgentState(ev.newState, ev.createdAt);
-    if (ev.newState === 'speaking') setAgentError('');
+    if (ev.newState === 'speaking') {
+      setAgentError('');
+      // The speech queue runs one speech at a time: a scheduled, unfinished filler is the one heard.
+      const fillerSpeaking = [...fillerSpeeches].some((h) => h.scheduled && !h.done());
+      if (!fillerSpeaking) director?.replyStarted();
+    }
   });
   session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
     const item = ev.item;
@@ -388,15 +424,22 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   await session.start({
     agent: new CharacterAgent(
-      { instructions: character.instructions },
+      { instructions: ambience ? `${character.instructions}\n\n${ambienceRules(ambience)}` : character.instructions },
       toneOf,
       (entry) => logger.info(entry, 'llm reply'),
       fillerHooks,
+      director,
     ),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
     outputOptions: { audioSampleRate: config.audioSampleRate },
   });
+  // Its own WebRTC track (`background_audio`), so the browser's echo cancellation covers it.
+  const background = bed && new voice.BackgroundAudioPlayer();
+  if (background && bed) {
+    await background.start({ room: ctx.room });
+    background.play(bed.frames());
+  }
   logger.info(
     {
       character: character.id,
@@ -409,11 +452,14 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       tts: tts.provider,
       ttsUrl: config.tts.url,
       fillers: fillerBank?.fillers.length ?? 0,
+      ambience: ambience ? ambience.levels.map((l) => l.id) : false,
     },
     'conversation ready',
   );
 
   ctx.addShutdownCallback(async () => {
+    bed?.close();
+    await background?.close();
     await session.close();
   });
 };
