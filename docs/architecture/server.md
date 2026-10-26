@@ -201,6 +201,13 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - 角色 front matter 写 `ambience: true`，且 Agent 配了 `AMBIENCE_DIR`（素材和清单，不进 Git，见 `services/ambience/README.md`）时启用；清单生成的档位规则拼在人设后面，与 `_rules.md` 无关
 - LLM 在每段回复开头写 `<bg:档位>`；Segmenter 去掉标签，TTS 插件把这段回复的第一个档位报给档位状态机（`apps/agent/src/ambience/`）。回复开始播放（Agent 状态变为 speaking，且不是语气词在播）时才切换，交叉淡化 `fadeMs`；没有标签、档位未知、回复出声前被打断，都保持原档
 - 由 `BackgroundAudioPlayer` 发布独立音轨 `background_audio`，浏览器把它当远端 WebRTC 音频播放，在回声消除范围内
+- 播放规则：
+  - 通话开始时是清单里的第一个档位（`idle`，静音）
+  - 当前档位的素材一直循环，与角色是否在说话无关，直到档位变化或挂断；降到 `idle` 时淡出到静音
+  - 切档时新旧两档同时交叉淡化 `fadeMs`（默认 1500ms）；淡出还没结束又切回原档，从当时的位置接着淡入，不从头播
+  - 读入素材时把最后 50ms 和开头交叉淡化，循环处没有接缝
+  - 网页的背景音开关只在本浏览器暂停这条音轨，Agent 照常播放、照常切档
+- 发给 LLM 的请求里，历史中的每条 AI 回复前补上它播出后的档位（如 `<bg:mid>…`）。只改这次请求的副本，提交的对话历史和字幕不带标签。不补时，Dolphin 看到自己以前的回复都没有标签，第 2 轮起就不再写（2026-10-27 实测）
 - 每轮一条 `ambience` 日志（`tag` / `from` / `to` / `ignored`）
 
 ## 9. 运维注意
