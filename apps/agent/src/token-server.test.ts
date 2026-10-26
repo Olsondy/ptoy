@@ -19,7 +19,7 @@ describe('character link HTTP flow', () => {
   let server: ReturnType<typeof createTokenServer>;
   let base: string;
   const catalog = (ids: string[]) => new CharacterCatalog(ids.map((id) => ({
-    id, name: id, description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], instructions: 'Test fixture only.',
+    id, name: id, description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], ambience: false, instructions: 'Test fixture only.',
   })), 'a');
   const post = (path: string, body: object) => fetch(base + path, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Origin: config.access.origin, Cookie: cookie },

@@ -73,7 +73,8 @@
 - 主页可选择角色并复制固定角色链接 `/?character=<opaque-token>`；链接页面只显示固定角色，不提供切换入口，且不覆盖主页保存的选择。加载或校验失败时禁止拨号，禁止回退默认角色。
 - `POST /api/character-link { character }` 生成 AES-256-GCM 加密、Base64URL 编码的角色令牌；`GET /api/characters?characterLink=...` 只返回该角色；`POST /api/token { characterLink }` 在服务端重新校验并写入 `ptoy.character`，不允许同时传明文角色。令牌使用随机 nonce 和版本标识，不设到期时间；角色删除或密钥更换后失效。密钥由 `CHARACTER_LINK_SECRET` 派生，未设置时使用 `LIVEKIT_API_SECRET`，只保留在服务端。主页仍公开可选角色，固定链接不构成角色访问权限控制。
 - 本需求按三个可验收切片实现：① 加密链接生成、解析及通话绑定，测试篡改/未知角色/冲突参数；② 主页复制及固定页状态，测试刷新、已保存选择、无效链接与手机布局；③ 回归连接/挂断、字幕开关和键盘选择。
-- 底部控制栏为开始／挂断按钮；字幕开关在右上角角色按钮旁。
+- 底部控制栏为开始／挂断按钮；字幕开关和背景音开关在右上角角色按钮旁。
+- 背景音开关默认开启，不记住选择；关闭时只在本浏览器暂停 Agent 的 `background_audio` 音轨（`setEnabled(false)`），Agent 照常播放，重新打开就接上当前档位。
 - 字幕默认关闭，打开后显示最近的双方发言，长字幕显示末尾正在说的内容；关闭字幕不停止接收，重新打开时显示最新发言。服务错误独立显示，不因关闭字幕而隐藏。
 - UI 组件使用规范以根目录 `AGENTS.md` 为准。
 
@@ -195,6 +196,12 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - 每个音色预先合成 5–10 条（“嗯…”“好的，”“我想想”等），按场景选用，避免每句都用而显得机械
 - 生成器在 `services/fillers/`，产物（48kHz 单声道 16-bit WAV + `manifest.json`）按音色放在 `assets/fillers/<voice>/`（ADR 0008）；新增或更换音色后用 `--voice <id>` 重新生成
 - 接入方式见 §12「语气词」
+
+### 背景音（ADR 0013）
+- 角色 front matter 写 `ambience: true`，且 Agent 配了 `AMBIENCE_DIR`（素材和清单，不进 Git，见 `services/ambience/README.md`）时启用；清单生成的档位规则拼在人设后面，与 `_rules.md` 无关
+- LLM 在每段回复开头写 `<bg:档位>`；Segmenter 去掉标签，TTS 插件把这段回复的第一个档位报给档位状态机（`apps/agent/src/ambience/`）。回复开始播放（Agent 状态变为 speaking，且不是语气词在播）时才切换，交叉淡化 `fadeMs`；没有标签、档位未知、回复出声前被打断，都保持原档
+- 由 `BackgroundAudioPlayer` 发布独立音轨 `background_audio`，浏览器把它当远端 WebRTC 音频播放，在回声消除范围内
+- 每轮一条 `ambience` 日志（`tag` / `from` / `to` / `ignored`）
 
 ## 9. 运维注意
 

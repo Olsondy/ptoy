@@ -28,12 +28,19 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
   protected override emitMetrics = false;
   readonly #tts: SegmentSynthesizer;
   readonly #segmenterOptions: SegmenterOptions | undefined;
+  readonly #onAmbience: ((level: string) => void) | undefined;
   #segmentError: Error | undefined;
 
-  constructor(synth: SegmentSynthesizer, segmenterOptions?: SegmenterOptions, connOptions?: APIConnectOptions) {
+  constructor(
+    synth: SegmentSynthesizer,
+    segmenterOptions?: SegmenterOptions,
+    connOptions?: APIConnectOptions,
+    onAmbience?: (level: string) => void,
+  ) {
     super(synth, connOptions);
     this.#tts = synth;
     this.#segmenterOptions = segmenterOptions;
+    this.#onAmbience = onAmbience;
   }
 
   override get error(): Error | undefined {
@@ -47,6 +54,7 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
     let previousText = '';
     let previous: Promise<void> = Promise.resolve();
     const pending: Promise<void>[] = [];
+    let ambienceReported = false;
 
     const synthesize = async (segment: Segment, after: Promise<void>) => {
       this.markStarted();
@@ -74,6 +82,11 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
 
     const enqueue = (segments: Segment[]) => {
       for (const segment of segments) {
+        // The reply's first `<bg:…>` level, reported once (ADR 0013).
+        if (!ambienceReported && segment.ambience !== undefined) {
+          ambienceReported = true;
+          this.#onAmbience?.(segment.ambience);
+        }
         const task = synthesize(segment, previous);
         // Keep ordering even if a segment fails; the failure itself surfaces via the plugin.
         previous = task.catch(() => undefined);

@@ -1,4 +1,5 @@
 ---
+ambience: true
 name: 柔依
 description: 成人亲密伴侣，私密语音（18+）
 voice: rouyi

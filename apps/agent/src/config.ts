@@ -190,6 +190,8 @@ const conversationSchema = charactersSchema.extend({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
   FILLER_DELAY_MS: z.coerce.number().int().nonnegative().default(2000),
+  // Background ambience (ADR 0013): `manifest.json` + WAV loops; kept out of Git, unset = no ambience.
+  AMBIENCE_DIR: z.string().min(1).optional(),
 });
 
 export interface LlmConfig {
@@ -289,6 +291,8 @@ export interface ConversationConfig extends CallConfig {
      */
     readonly delayMs: number;
   };
+  /** Background ambience for characters with `ambience: true` (ADR 0013); `undefined` = none. */
+  readonly ambienceDir?: string;
 }
 
 export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): ConversationConfig {
@@ -353,5 +357,6 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
     fillers: e.FILLERS_ENABLED
       ? { dir: e.FILLERS_DIR, always: e.FILLERS_ALWAYS, delayMs: e.FILLER_DELAY_MS }
       : undefined,
+    ...(e.AMBIENCE_DIR !== undefined && { ambienceDir: e.AMBIENCE_DIR }),
   };
 }

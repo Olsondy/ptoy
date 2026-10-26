@@ -21,7 +21,7 @@ async function redeem(code: string) {
   return res.headers.get('set-cookie')!.split(';')[0]!;
 }
 beforeEach(async () => {
-  vi.mocked(loadCharacters).mockReturnValue(new CharacterCatalog([{ id: 'fixture', name: 'Fixture', description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], instructions: 'Synthetic test only.' }], 'fixture'));
+  vi.mocked(loadCharacters).mockReturnValue(new CharacterCatalog([{ id: 'fixture', name: 'Fixture', description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], ambience: false, instructions: 'Synthetic test only.' }], 'fixture'));
   store = new AccessStore(':memory:'); participants = [];
   server = createTokenServer(config, undefined, new AccessController(store, config.access, { participants: async () => participants, close: async () => { participants = []; } }));
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); base = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
