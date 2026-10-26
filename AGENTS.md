@@ -25,6 +25,7 @@
 - 压测以 Windows 本机数据为准，Mac 经 Wi-Fi 的数据不作数
 - 提交说明和 PR 描述不加任何 AI 署名（不加 `Co-Authored-By: Claude ...`，也不加 "Generated with Claude Code"）；派生的子 Agent 同样适用
 - 所有提交（包括合并提交）都用本机 git 身份（`user.name` / `user.email`）。合并 PR 在本地 `git merge --no-ff` 后推送，不用 `gh pr merge` 或网页按钮（那样作者会变成 GitHub 账号的显示名）
+- `README.md` 只做项目简介（是什么、目录导航、如何启动）。禁止在做功能或改文档时顺手往 README 里追加功能说明、配置细节、部署记录、实测数据等内容；这些写进对应的独立文档（`docs/architecture/`、`docs/roadmap/`、`docs/decisions/`、各服务目录下的文档等），README 至多加一行链接。只有项目定位、目录结构或启动方式本身变了，才改 README 正文
 - 这个`D:\Resources\MyWorkspace\ai\ptoy\apps\agent\prompts\characters`目录中除了`_rules.md`文件以外,其他文件都不需要你读取内容.务必遵守这个规则
 
 ## 前端 UI 组件约定

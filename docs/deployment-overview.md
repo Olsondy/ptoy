@@ -160,6 +160,17 @@ pnpm app
 
 该命令由 `scripts/app.mjs` 启动 LiveKit、token 服务、Agent 和网页，并构建前端；不会启动、停止或加载三个模型。LiveKit 已在配置端口运行时会跳过启动。打开 [http://localhost:4173](http://localhost:4173)，允许麦克风，戴耳机后打开通话开关。
 
+指定环境时读取同目录的完整配置文件，不叠加本地 `.env`：
+
+```powershell
+pnpm app --env hk                                 # apps/agent/.env.hk
+pnpm --filter @ptoy/agent start --env hk           # 仅启动 Agent
+pnpm --filter @ptoy/agent start:token --env hk     # 仅启动 Token 服务
+pnpm app --env hk --check-env                     # 只检查配置选择及生产域名是否填写，不启动服务
+```
+
+省略 `--env` 仍使用 `apps/agent/.env`；指定的环境文件缺失会报错，不回退。进程环境变量优先于文件。`dev`、`dev:token`、`invite`、`chat`、`sim:call`、`emotion:compliance` 也支持同一选项。真实 `.env.*` 已被 Git 忽略，密钥只保留在本机文件中。生产环境（如 HK）的额外配置见 [HK 部署](../deploy/cloud/hk/README.md)。
+
 浏览器通过网页代理获取 token，再加入 LiveKit 房间；Agent 调用 ASR、LLM 和 TTS，音频经 LiveKit 回到浏览器。具体组件与数据流见 [总体架构](architecture/server.md#3-总体架构)，接口实现见 [SenseVoice 适配器](../apps/agent/src/stt/sensevoice.ts)、[LLM 适配器](../apps/agent/src/llm/index.ts)、[TTS API 适配器](../apps/agent/src/tts/fastapi.ts) 和 [Gradio 适配器](../apps/agent/src/tts/gradio.ts)。
 
 从手机或其他电脑访问见下一节。

@@ -5,6 +5,7 @@
 - 源码：`/opt/ptoy/source`，从 GitHub 克隆，再同步尚未提交的工作区改动。
 - 唯一应用环境文件：`/opt/ptoy/source/apps/agent/.env.hk`，`root:ptoy`、`0640`，不提交 Git。
 - 单元：本目录 `ptoy-token.service`、`ptoy-agent.service` 安装到 `/etc/systemd/system/`，使用 `--env hk`；LiveKit 继续使用 `/etc/livekit/livekit.yaml`。
+- `.env.hk` 还需填写 `APP_ORIGIN=https://网页域名` 和 `LIVEKIT_PUBLIC_URL=wss://信令域名`；`LIVEKIT_CONFIG` 指向的 LiveKit 配置必须使用相同的 API key/secret。Linux 可执行文件、角色资源目录及 Tailscale 链路须在服务器上准备好。生产环境不会自动用 `--dev` 启动 LiveKit。`pnpm app --env hk --check-env` 只检查配置选择及域名是否填写，不验证网络、模型服务或资源文件，也不代表已完成部署。
 - 前端：`/var/www/ptoy/current` 只保存 `apps/web/dist`；数据库与角色资源在 `/var/lib/ptoy`。
 - 配置中的 `ACCESS_MAINTENANCE_DEFAULT=true` 仅决定新建数据库的初始状态；运行状态通过运维 API 控制。
 
