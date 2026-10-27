@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { rejectRenamedEnv } from '../env-renames.js';
+import { isOpenRouterUrl } from '../openrouter.js';
 
 const schema = z.object({
   CLOUD_MODEL_CHECKS: z.enum(['true', 'false']).default('false'),
@@ -12,13 +13,12 @@ const schema = z.object({
   TTS_BACKEND: z.string().default('gradio'),
 });
 
-/** Hosted OpenRouter has no `/health`; it is not a self-hosted model to gate on. */
-const isOpenRouter = (url: string) => new URL(url).hostname === 'openrouter.ai';
 export interface ModelChecksConfig { enabled: boolean; timeoutMs: number; cacheMs: number; urls: readonly string[] }
 export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): ModelChecksConfig {
   rejectRenamedEnv(env);
   const e = schema.parse(env);
-  // ASR and LLM bases end in /v1; their /health sits at the service root.
+  // ASR and LLM bases end in /v1; their /health sits at the service root. Hosted OpenRouter has no
+  // `/health` and is not a self-hosted model to gate on, so it is skipped.
   const health = (base: string, apiBase = false) => {
     const url = new URL(base);
     const path = url.pathname.replace(/\/$/, '');
@@ -29,7 +29,7 @@ export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): Mod
   return { enabled: e.CLOUD_MODEL_CHECKS === 'true', timeoutMs: e.CLOUD_MODEL_CHECK_TIMEOUT_MS, cacheMs: e.CLOUD_MODEL_CHECK_CACHE_MS,
     urls: [
       ...(e.ASR_BACKEND === 'openrouter' ? [] : [health(e.ASR_BASE_URL, true)]),
-      ...(isOpenRouter(e.LLM_BASE_URL) ? [] : [health(e.LLM_BASE_URL, true)]),
+      ...(isOpenRouterUrl(e.LLM_BASE_URL) ? [] : [health(e.LLM_BASE_URL, true)]),
       ...(e.TTS_BACKEND === 'openrouter' ? [] : [health(e.TTS_FASTAPI_URL)]),
     ] };
 }

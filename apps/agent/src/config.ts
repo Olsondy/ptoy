@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { loadAccessConfig, type AccessConfig } from './access/config.js';
 import { loadModelChecksConfig, type ModelChecksConfig } from './access/availability.js';
 import { rejectRenamedEnv } from './env-renames.js';
+import { OPENROUTER_API_BASE, isOpenRouterUrl, openRouterKey } from './openrouter.js';
 
 const livekitSchema = z.object({
   LIVEKIT_URL: z.string().url(),
@@ -93,10 +94,8 @@ const callSchema = z.object({
   ASR_BASE_URL: z.string().url().optional(),
   ASR_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   ASR_LANGUAGE: z.string().min(2).default('zh'),
-  // OpenRouter only: bearer key (falls back to OPENROUTER_API_KEY) and `model` form field.
-  ASR_API_KEY: z.string().min(1).optional(),
+  // OpenRouter only: `model` form field. The key is ASR_API_KEY, else OPENROUTER_API_KEY.
   ASR_MODEL: z.string().min(1).optional(),
-  OPENROUTER_API_KEY: z.string().min(1).optional(),
   TURN_DETECTOR: z.enum(['vad', 'eot', 'transcript']).default('transcript'),
   VAD_MIN_SILENCE_MS: z.coerce.number().int().positive().default(550),
   ENDPOINTING_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(800),
@@ -108,7 +107,7 @@ const callSchema = z.object({
 /** Per-backend ASR defaults; `ASR_BASE_URL` is an API base, the plugin appends `/audio/transcriptions`. */
 const ASR_DEFAULTS = {
   sensevoice: { baseUrl: 'http://127.0.0.1:8001/v1' },
-  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'fish-audio/transcribe-1-pro' },
+  openrouter: { baseUrl: OPENROUTER_API_BASE, model: 'fish-audio/transcribe-1-pro' },
 } as const;
 
 export interface CallConfig {
@@ -139,7 +138,7 @@ export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig
   rejectRenamedEnv(env);
   const parsed = callSchema.safeParse(env);
   const issues = parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
-  const asrKey = parsed.success ? (parsed.data.ASR_API_KEY ?? parsed.data.OPENROUTER_API_KEY) : undefined;
+  const asrKey = openRouterKey(env, 'ASR_API_KEY');
   if (parsed.success && parsed.data.ASR_BACKEND === 'openrouter' && asrKey === undefined) {
     issues.push('ASR_API_KEY: required with ASR_BACKEND=openrouter (or set OPENROUTER_API_KEY)');
   }
@@ -169,11 +168,32 @@ export const DEFAULT_FILLERS_DIR = fileURLToPath(new URL('../../../assets/filler
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
-const conversationSchema = charactersSchema.extend({
+const llmEndpointSchema = z.object({
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   LLM_MODEL: z.string().min(1).default('qwen3-8b'),
-  // llama-server ignores the key; the OpenAI client just needs a non-empty one.
-  LLM_API_KEY: z.string().min(1).default('no-key'),
+});
+
+/**
+ * Any OpenAI-compatible chat endpoint (llama-server, OpenRouter, ...), so no backend switch: the URL
+ * decides. On openrouter.ai the key is LLM_API_KEY, else OPENROUTER_API_KEY; elsewhere LLM_API_KEY,
+ * else `no-key` (llama-server ignores it, the OpenAI client just needs a non-empty one).
+ */
+export function loadLlmEndpoint(env: NodeJS.ProcessEnv = process.env): { baseUrl: string; model: string; apiKey: string } {
+  const parsed = llmEndpointSchema.safeParse(env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    throw new Error(`Invalid LLM env (see apps/agent/.env.example): ${issues}`);
+  }
+  const { LLM_BASE_URL: baseUrl, LLM_MODEL: model } = parsed.data;
+  const hosted = isOpenRouterUrl(baseUrl);
+  const apiKey = hosted ? openRouterKey(env, 'LLM_API_KEY') : env.LLM_API_KEY || 'no-key';
+  if (apiKey === undefined) {
+    throw new Error('Invalid LLM env (see apps/agent/.env.example): LLM_API_KEY: required on openrouter.ai (or set OPENROUTER_API_KEY)');
+  }
+  return { baseUrl, model, apiKey };
+}
+
+const conversationSchema = charactersSchema.extend({
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(220),
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
@@ -357,9 +377,7 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
   return {
     ...loadCallConfig(env),
     llm: {
-      baseUrl: e.LLM_BASE_URL,
-      model: e.LLM_MODEL,
-      apiKey: e.LLM_API_KEY,
+      ...loadLlmEndpoint(env),
       maxTokens: e.LLM_MAX_TOKENS,
       temperature: e.LLM_TEMPERATURE,
       timeoutMs: e.LLM_TIMEOUT_MS,

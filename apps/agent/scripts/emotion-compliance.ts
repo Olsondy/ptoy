@@ -14,7 +14,7 @@
 import { createSegmenter, type Emotion, EMOTIONS } from '@ptoy/segmenter';
 import { parseArgs } from 'node:util';
 import { loadCharacters } from '../src/characters.js';
-import { DEFAULT_CHARACTERS_DIR } from '../src/config.js';
+import { DEFAULT_CHARACTERS_DIR, loadLlmEndpoint } from '../src/config.js';
 import { withTone } from '../src/emotion/user-tone.js';
 
 const { values } = parseArgs({
@@ -25,8 +25,9 @@ const { values } = parseArgs({
     json: { type: 'boolean', default: false },
   },
 });
-const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace(/\/+$/, '');
-const model = process.env.LLM_MODEL ?? 'qwen3-8b';
+const endpoint = loadLlmEndpoint();
+const baseUrl = endpoint.baseUrl.replace(/\/+$/, '');
+const { model, apiKey } = endpoint;
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
 const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 220);
 const catalog = loadCharacters(process.env.CHARACTERS_DIR ?? DEFAULT_CHARACTERS_DIR, values.character);
@@ -91,7 +92,7 @@ async function complete(messages: { role: string; content: string }[]): Promise<
     try {
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer no-key' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, stream: false }),
         signal: AbortSignal.timeout(30_000),
       });

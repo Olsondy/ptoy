@@ -18,7 +18,7 @@ import { createSegmenter, type Emotion, EMOTIONS } from '@ptoy/segmenter';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { loadCharacters } from '../src/characters.js';
-import { DEFAULT_CHARACTERS_DIR, type ReasoningEffort } from '../src/config.js';
+import { DEFAULT_CHARACTERS_DIR, loadLlmEndpoint, type ReasoningEffort } from '../src/config.js';
 import { withReasoningEffort } from '../src/llm/index.js';
 import { REPLY_SEGMENTER } from '../src/pipelines/conversation.js';
 import { withTone } from '../src/emotion/user-tone.js';
@@ -30,14 +30,15 @@ const { values } = parseArgs({
     'show-request': { type: 'boolean', default: false },
   },
 });
-const baseUrl = (process.env.LLM_BASE_URL ?? 'http://127.0.0.1:8080/v1').replace(/\/+$/, '');
-const model = process.env.LLM_MODEL ?? 'qwen3-8b';
+const endpoint = loadLlmEndpoint();
+const baseUrl = endpoint.baseUrl.replace(/\/+$/, '');
+const { model, apiKey } = endpoint;
 const temperature = Number(process.env.LLM_TEMPERATURE ?? 0.7);
 const maxTokens = Number(process.env.LLM_MAX_TOKENS ?? 220);
 const { reasoningEffort } = await withReasoningEffort({
   baseUrl,
   model,
-  apiKey: process.env.LLM_API_KEY ?? 'no-key',
+  apiKey,
   reasoningEffort: (process.env.LLM_REASONING_EFFORT || undefined) as ReasoningEffort | undefined,
 });
 // Same switch as the agent (LLM_SHARED_RULES): off → no `_rules.md`, no tone prefix.
@@ -75,7 +76,7 @@ async function complete(messages: readonly Message[]): Promise<{ text: string; m
   const started = performance.now();
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.LLM_API_KEY ?? 'no-key'}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(Number(process.env.LLM_TIMEOUT_MS ?? 10000) * 3),
   });

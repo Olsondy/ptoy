@@ -1,6 +1,7 @@
 import { APIStatusError, initializeLogger, llm } from '@livekit/agents';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type FakeOpenAI, type FakeOpenAIOptions, startFakeOpenAI } from '../../test/fakes/openai.js';
+import { loadLlmEndpoint } from '../config.js';
 import { createLlm } from './index.js';
 
 initializeLogger({ pretty: false, level: 'silent' });
@@ -72,5 +73,17 @@ describe('LLM against an OpenAI-compatible (llama-server) endpoint', () => {
     expect(tokens).toEqual([]);
     expect(errors.at(-1)?.recoverable).toBe(false);
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+describe('LLM endpoint config', () => {
+  it('uses the shared OpenRouter key only on openrouter.ai; local llama-server needs none', () => {
+    expect(loadLlmEndpoint({ OPENROUTER_API_KEY: 'sk-or-shared' })).toEqual({
+      baseUrl: 'http://127.0.0.1:8080/v1', model: 'qwen3-8b', apiKey: 'no-key',
+    });
+    const hosted = { LLM_BASE_URL: 'https://openrouter.ai/api/v1', LLM_MODEL: 'some/model' };
+    expect(loadLlmEndpoint({ ...hosted, OPENROUTER_API_KEY: 'sk-or-shared' }).apiKey).toBe('sk-or-shared');
+    expect(loadLlmEndpoint({ ...hosted, OPENROUTER_API_KEY: 'sk-or-shared', LLM_API_KEY: 'sk-or-llm' }).apiKey).toBe('sk-or-llm');
+    expect(() => loadLlmEndpoint(hosted)).toThrow(/LLM_API_KEY: required/);
   });
 });
