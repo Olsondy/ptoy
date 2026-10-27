@@ -39,7 +39,7 @@
 在 Mac 上用 ffmpeg 转换（服务器上不需要 ffmpeg）。输入目录里的文件按档位命名，如 `low.mp3`：
 
 ```bash
-python3 services/ambience/convert.py ~/Desktop/voice .data/ambience
+python3 services/ambience/convert.py .data/ambience-src .data/ambience
 ```
 
 脚本会把素材转成上面的格式并统一响度（-23 LUFS）。输出目录还没有 `manifest.json` 时，会写一份默认清单；已有清单不会覆盖，可以直接改里面的说明和音量后重新运行。
@@ -51,8 +51,8 @@ python3 services/ambience/convert.py ~/Desktop/voice .data/ambience
 HK 服务器（`.env.hk` 已设置 `AMBIENCE_DIR=/var/lib/ptoy/resources/ambience`）：先在本机转换并校验，通过后手动上传到这个目录，覆盖同名文件。下一通电话生效，不用重启。
 
 ```bash
-python3 services/ambience/convert.py ~/Desktop/voice .data/ambience-out
-pnpm --filter @ptoy/agent check:ambience -- .data/ambience-out
+python3 services/ambience/convert.py .data/ambience-src .data/ambience
+pnpm --filter @ptoy/agent check:ambience -- .data/ambience
 ```
 
 校验按 Agent 读取的方式检查清单和每个循环文件，通过时会列出所有档位。上传后的文件要让 `ptoy` 用户可读（当前为 `root:ptoy`、`0640`）。
