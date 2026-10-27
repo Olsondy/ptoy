@@ -55,7 +55,16 @@ python3 services/ambience/convert.py .data/ambience-src .data/ambience
 pnpm --filter @ptoy/agent check:ambience -- .data/ambience
 ```
 
-校验按 Agent 读取的方式检查清单和每个循环文件，通过时会列出所有档位。上传后的文件要让 `ptoy` 用户可读（当前为 `root:ptoy`、`0640`）。
+校验按 Agent 读取的方式检查清单和每个循环文件，通过时会列出所有档位。
+
+上传使用 SFTP 账号 `ambience`，密码登录（密码不写进仓库，找维护者要）：
+
+```bash
+sftp ambience@38.55.199.239      # 登录后就在 /upload，即服务器的 AMBIENCE_DIR
+sftp> put .data/ambience/*
+```
+
+这个账号只能用 SFTP，被限制在 `/upload` 目录里。上传的文件自动归 `ptoy` 组、权限 `0640`，Agent 可以直接读取。服务器配置在 `/etc/ssh/sshd_config.d/60-ambience-sftp.conf`，`/srv/sftp/ambience/upload` 通过 `/etc/fstab` 中的 bind 挂载指向 `/var/lib/ptoy/resources/ambience`。
 
 ## 验证
 
