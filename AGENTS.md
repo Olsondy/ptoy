@@ -52,3 +52,9 @@ Issue 存放在 GitHub Issues（`gh` CLI）。见 `docs/agents/issue-tracker.md`
 ### Domain docs
 
 单上下文：根目录一个 `CONTEXT.md` + `docs/decisions/`（本仓库的 ADR 目录，不用 `docs/adr/`）。见 `docs/agents/domain.md`。
+
+## Review guidelines
+
+- 用简体中文写审查评论。
+- 重点检查会导致 HK 自动部署失败的改动，例如新增环境变量没有写进 `apps/agent/.env.example`。
+- 不在评论里引用 `apps/agent/prompts/characters/` 中角色文件的内容。
