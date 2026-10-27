@@ -40,7 +40,7 @@ export const FISH_EMOTION_HINTS: Readonly<Record<Emotion, string | undefined>> =
  *
  * The cloud replaces IndexTTS on the local GPU. An abort only drops the HTTP request; the
  * provider has no cancel endpoint. The voice is a provider voice id, mapped from the
- * character's `voice:` by `TTS_OPENROUTER_VOICES` (see `createTtsBackend`).
+ * character's `voice:` by `TTS_VOICES` (see `createTtsBackend`).
  */
 export class OpenRouterTtsBackend implements TtsBackend {
   readonly name = 'openrouter';

@@ -318,7 +318,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
   if (config.tts.backend === 'openrouter') {
     const providerVoice = config.tts.voices[character.voice];
     if (providerVoice === undefined) {
-      logger.warn({ voice: character.voice }, 'no TTS_OPENROUTER_VOICES entry for this voice, the model default speaks');
+      logger.warn({ voice: character.voice }, 'no TTS_VOICES entry for this voice, the model default speaks');
     }
     if (config.fillers) {
       logger.warn({ voice: character.voice }, 'fillers were recorded with IndexTTS and may not match the OpenRouter voice');

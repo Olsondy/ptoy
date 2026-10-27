@@ -1,15 +1,15 @@
 import { z } from 'zod';
 import { rejectRenamedEnv } from '../env-renames.js';
-import { isOpenRouterUrl } from '../openrouter.js';
+import { ASR_DEFAULTS, TTS_DEFAULTS, isOpenRouterUrl } from '../endpoints.js';
 
 const schema = z.object({
   CLOUD_MODEL_CHECKS: z.enum(['true', 'false']).default('false'),
   CLOUD_MODEL_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).max(10000).default(2000),
   CLOUD_MODEL_CHECK_CACHE_MS: z.coerce.number().int().min(0).max(30000).default(3000),
   ASR_BACKEND: z.string().default('sensevoice'),
-  ASR_BASE_URL: z.string().url().default('http://127.0.0.1:8001/v1'),
+  ASR_BASE_URL: z.string().url().default(ASR_DEFAULTS.sensevoice.baseUrl),
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
-  TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
+  TTS_BASE_URL: z.string().url().default(TTS_DEFAULTS.fastapi.baseUrl),
   TTS_BACKEND: z.string().default('gradio'),
 });
 
@@ -30,7 +30,8 @@ export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): Mod
     urls: [
       ...(e.ASR_BACKEND === 'openrouter' ? [] : [health(e.ASR_BASE_URL, true)]),
       ...(isOpenRouterUrl(e.LLM_BASE_URL) ? [] : [health(e.LLM_BASE_URL, true)]),
-      ...(e.TTS_BACKEND === 'openrouter' ? [] : [health(e.TTS_FASTAPI_URL)]),
+      // Only the FastAPI service has `/health`; the Gradio WebUI is a dev setup and is not gated.
+      ...(e.TTS_BACKEND === 'fastapi' ? [health(e.TTS_BASE_URL)] : []),
     ] };
 }
 

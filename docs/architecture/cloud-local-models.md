@@ -62,7 +62,7 @@ flowchart LR
 | `ACCESS_INTERNAL_SECRET` | 可使用独立内部鉴权密钥，不写入仓库 |
 | `ACCESS_TRUSTED_PROXY_IPS` | 只信任所选 Web 代理的实际回环来源 IP，不使用任意来源白名单 |
 | `LIVEKIT_URL` / `LIVEKIT_PUBLIC_URL` | 分别用于应用内部连接和浏览器 WSS 地址 |
-| `ASR_BASE_URL`（带 `/v1`）/ `LLM_BASE_URL` / `TTS_FASTAPI_URL` | Windows 的 Tailscale 模型地址；TTS 使用 FastAPI 后端 |
+| `ASR_BASE_URL`（带 `/v1`）/ `LLM_BASE_URL` / `TTS_BASE_URL` | Windows 的 Tailscale 模型地址；TTS 使用 FastAPI 后端 |
 | `CHARACTERS_DIR` / `FILLERS_DIR` | 云端角色及预录音频资源目录 |
 
 公网 API 与内部准入接口须按路由隔离；不能将 Token 服务的所有路径原样公开代理。模型端口的私网访问范围限定到所需设备。Tailscale 直连/中继状况与完整模型调用延迟在部署时验证。[Tailscale 文档](https://tailscale.com/docs/reference/troubleshooting/network-configuration/derp-routing)

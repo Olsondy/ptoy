@@ -96,9 +96,8 @@ ENDPOINTING_MIN_DELAY_MS=800
 ENDPOINTING_MAX_DELAY_MS=2000
 LLM_BASE_URL=http://127.0.0.1:8080/v1
 LLM_MODEL=qwen3-8b
-LLM_API_KEY=no-key
 TTS_BACKEND=fastapi
-TTS_FASTAPI_URL=http://127.0.0.1:8002
+TTS_BASE_URL=http://127.0.0.1:8002
 TTS_EMOTION_CONTROL=vector
 TTS_EMO_WEIGHT=0.6
 ```
@@ -107,7 +106,7 @@ TTS_EMO_WEIGHT=0.6
 
 ```ini
 TTS_BACKEND=gradio
-TTS_GRADIO_URL=http://127.0.0.1:7860
+TTS_BASE_URL=http://127.0.0.1:7860
 TTS_REF_AUDIO=D:/Development/IndexTTS/prompts/voices/<id>.wav
 TTS_LANGUAGE=ZH
 TTS_EMOTION_CONTROL=vector
@@ -117,25 +116,23 @@ TTS_EMO_WEIGHT=0.6
 全部模型改用 OpenRouter 时（ADR 0012），不需要启动任何模型服务，第二层可以跳过：
 
 ```ini
+# 一个 key 三个服务共用；某个服务要单独的 key 时再设 ASR_API_KEY / LLM_API_KEY / TTS_API_KEY
+OPENROUTER_API_KEY=sk-or-...
+# ASR_MODEL 默认 fish-audio/transcribe-1-pro，TTS_MODEL 默认 fish-audio/s2.1-pro
 ASR_BACKEND=openrouter
-ASR_API_KEY=sk-or-...
-ASR_MODEL=fish-audio/transcribe-1-pro
 LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_API_KEY=sk-or-...
 LLM_MODEL=cognitivecomputations/dolphin-mistral-24b-venice-edition
 LLM_SHARED_RULES=false
 TTS_BACKEND=openrouter
-TTS_OPENROUTER_API_KEY=sk-or-...
-TTS_OPENROUTER_MODEL=fish-audio/s2.1-pro
-TTS_OPENROUTER_VOICES=rouyi=<fish voice id>
+TTS_VOICES=rouyi=<fish voice id>
 DEFAULT_CHARACTER=rouyi
 FILLERS_ENABLED=false
 # 可选：背景音素材目录（不进 Git，单独上传），见 services/ambience/README.md
 # AMBIENCE_DIR=/var/lib/ptoy/resources/ambience
 ```
 
-- 页面只列出 `tts_backends` 包含当前 `TTS_BACKEND` 的角色。内置角色缺省只用于 IndexTTS，Fish 模式下只有 `rouyi`；其他角色要在角色文件里加 `openrouter` 并在 `TTS_OPENROUTER_VOICES` 映射音色，`DEFAULT_CHARACTER` 也必须是可用角色，否则启动报错。
-- `TTS_OPENROUTER_VOICES` 把角色文件的 `voice:` 映射为 Fish 音色 id，未映射的用模型默认音色。预录语气词是 IndexTTS 音色，要关闭或用 Fish 音色重新生成。
+- 页面只列出 `tts_backends` 包含当前 `TTS_BACKEND` 的角色。内置角色缺省只用于 IndexTTS，Fish 模式下只有 `rouyi`；其他角色要在角色文件里加 `openrouter` 并在 `TTS_VOICES` 映射音色，`DEFAULT_CHARACTER` 也必须是可用角色，否则启动报错。
+- `TTS_VOICES` 把角色文件的 `voice:` 映射为 Fish 音色 id，未映射的用模型默认音色。预录语气词是 IndexTTS 音色，要关闭或用 Fish 音色重新生成。
 - 该后端不支持情绪强度，非平静情绪以 `[开心]` 式提示词传给模型，角色的 `tts_style` 加在每句最前面。`LLM_SHARED_RULES=false` 不拼 `_rules.md`，只适合人设自带说话规则的角色（如 `rouyi`）。
 - `fish-audio/transcribe-1-pro` 在文本里带 `[高兴]`、`[laughter]` 这类提示，Agent 按关键词映射成 SenseVoice 的情绪/事件类别，来电者语气可用；换成其他托管 ASR（如 `qwen/qwen3-asr-1.7b`）只返回文本，语气不可用。也可以只把 LLM/TTS 换成 OpenRouter，ASR 保留 SenseVoice。
 - `CLOUD_MODEL_CHECKS` 不探测 OpenRouter 上的 ASR、LLM 和 TTS。

@@ -153,7 +153,10 @@ async function main(): Promise<number> {
     const tts = await startFakeGradio({ synthMs: Number(values['tts-ms']), fail: values.fail === 'tts' ? () => 'error' : undefined });
     servers.push(tts);
     ttsCalls = tts.calls;
-    env.TTS_GRADIO_URL = tts.url;
+    // The fake is a Gradio WebUI: run it as that backend, with a character made for it.
+    env.TTS_BACKEND = 'gradio';
+    env.DEFAULT_CHARACTER = 'xiaoyou';
+    env.TTS_BASE_URL = tts.url;
     env.TTS_EMOTION_CONTROL = 'vector';
     const ref = join(scratch, 'ref.wav');
     writeFileSync(ref, encodeWav({ samples: new Int16Array(22050), sampleRate: 22050, channels: 1 }));

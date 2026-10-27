@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { loadAccessConfig, type AccessConfig } from './access/config.js';
 import { loadModelChecksConfig, type ModelChecksConfig } from './access/availability.js';
 import { rejectRenamedEnv } from './env-renames.js';
-import { OPENROUTER_API_BASE, isOpenRouterUrl, openRouterKey } from './openrouter.js';
+import { ASR_DEFAULTS, TTS_DEFAULTS, isOpenRouterUrl, openRouterKey } from './endpoints.js';
 
 const livekitSchema = z.object({
   LIVEKIT_URL: z.string().url(),
@@ -104,12 +104,6 @@ const callSchema = z.object({
   FALSE_INTERRUPTION_TIMEOUT_MS: z.coerce.number().int().positive().default(1000),
 });
 
-/** Per-backend ASR defaults; `ASR_BASE_URL` is an API base, the plugin appends `/audio/transcriptions`. */
-const ASR_DEFAULTS = {
-  sensevoice: { baseUrl: 'http://127.0.0.1:8001/v1' },
-  openrouter: { baseUrl: OPENROUTER_API_BASE, model: 'fish-audio/transcribe-1-pro' },
-} as const;
-
 export interface CallConfig {
   readonly asrBackend: 'sensevoice' | 'openrouter';
   readonly asrBaseUrl: string;
@@ -203,14 +197,13 @@ const conversationSchema = charactersSchema.extend({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
-  TTS_GRADIO_URL: z.string().url().default('http://127.0.0.1:7860'),
-  TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
+  // Defaults per TTS_BACKEND (TTS_DEFAULTS).
+  TTS_BASE_URL: z.string().url().optional(),
   TTS_REF_AUDIO: z.string().min(1).optional(),
-  TTS_OPENROUTER_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-  TTS_OPENROUTER_API_KEY: z.string().min(1).optional(),
-  TTS_OPENROUTER_MODEL: z.string().min(1).default('fish-audio/s2.1-pro'),
+  // OpenRouter only. The key is TTS_API_KEY, else OPENROUTER_API_KEY.
+  TTS_MODEL: z.string().min(1).optional(),
   // `<character voice>=<provider voice id>` pairs, comma-separated.
-  TTS_OPENROUTER_VOICES: z.string().default(''),
+  TTS_VOICES: z.string().default(''),
   TTS_LANGUAGE: z.enum(['ZH', 'EN', 'JA', 'AR', 'ES']).default('ZH'),
   TTS_EMOTION_CONTROL: z.enum(['reference', 'vector']).default('vector'),
   TTS_EMO_WEIGHT: z.coerce.number().min(0).max(1).default(0.6),
@@ -337,22 +330,24 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
   if (parsed.success && parsed.data.TTS_BACKEND === 'gradio' && !parsed.data.TTS_REF_AUDIO) {
     issues.push('TTS_REF_AUDIO: required with TTS_BACKEND=gradio (speaker reference wav)');
   }
-  if (parsed.success && parsed.data.TTS_BACKEND === 'openrouter' && !parsed.data.TTS_OPENROUTER_API_KEY) {
-    issues.push('TTS_OPENROUTER_API_KEY: required with TTS_BACKEND=openrouter');
+  const ttsKey = openRouterKey(env, 'TTS_API_KEY');
+  if (parsed.success && parsed.data.TTS_BACKEND === 'openrouter' && ttsKey === undefined) {
+    issues.push('TTS_API_KEY: required with TTS_BACKEND=openrouter (or set OPENROUTER_API_KEY)');
   }
-  const voices = parsed.success ? parseVoiceMap(parsed.data.TTS_OPENROUTER_VOICES) : {};
-  if (voices === undefined) issues.push('TTS_OPENROUTER_VOICES: expected `voice=id` pairs separated by commas');
+  const voices = parsed.success ? parseVoiceMap(parsed.data.TTS_VOICES) : {};
+  if (voices === undefined) issues.push('TTS_VOICES: expected `voice=id` pairs separated by commas');
   if (!parsed.success || issues.length > 0) {
     throw new Error(`Invalid conversation pipeline env (see apps/agent/.env.example): ${issues.join('; ')}`);
   }
   const e = parsed.data;
+  const ttsUrl = e.TTS_BASE_URL ?? TTS_DEFAULTS[e.TTS_BACKEND].baseUrl;
   const tts: TtsConfig =
     e.TTS_BACKEND === 'openrouter'
       ? {
           backend: 'openrouter',
-          url: e.TTS_OPENROUTER_URL,
-          apiKey: e.TTS_OPENROUTER_API_KEY as string,
-          model: e.TTS_OPENROUTER_MODEL,
+          url: ttsUrl,
+          apiKey: ttsKey as string,
+          model: e.TTS_MODEL ?? TTS_DEFAULTS.openrouter.model,
           voices: voices ?? {},
           emotionControl: e.TTS_EMOTION_CONTROL,
           timeoutMs: e.TTS_TIMEOUT_MS,
@@ -360,14 +355,14 @@ export function loadConversationConfig(env: NodeJS.ProcessEnv = process.env): Co
       : e.TTS_BACKEND === 'fastapi'
       ? {
           backend: 'fastapi',
-          url: e.TTS_FASTAPI_URL,
+          url: ttsUrl,
           emotionControl: e.TTS_EMOTION_CONTROL,
           emotionWeight: e.TTS_EMO_WEIGHT,
           timeoutMs: e.TTS_TIMEOUT_MS,
         }
       : {
           backend: 'gradio',
-          url: e.TTS_GRADIO_URL,
+          url: ttsUrl,
           refAudioPath: e.TTS_REF_AUDIO as string,
           language: e.TTS_LANGUAGE,
           emotionControl: e.TTS_EMOTION_CONTROL,

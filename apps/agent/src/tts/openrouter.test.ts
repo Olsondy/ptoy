@@ -144,11 +144,11 @@ describe('OpenRouter TTS config', () => {
     LIVEKIT_API_KEY: 'devkey',
     LIVEKIT_API_SECRET: 'secret',
     TTS_BACKEND: 'openrouter',
-    TTS_OPENROUTER_API_KEY: 'sk-or-test',
+    TTS_API_KEY: 'sk-or-test',
   };
 
   it('maps the character voice to its provider voice id', async () => {
-    const config = loadConversationConfig({ ...env, TTS_OPENROUTER_VOICES: 'xiaoyou-default=abc, zhixin = def' });
+    const config = loadConversationConfig({ ...env, TTS_VOICES: 'xiaoyou-default=abc, zhixin = def' });
     expect(config.tts).toMatchObject({
       backend: 'openrouter',
       url: 'https://openrouter.ai/api/v1',
@@ -165,10 +165,12 @@ describe('OpenRouter TTS config', () => {
   });
 
   it('requires the key and well-formed voice pairs', () => {
-    const { TTS_OPENROUTER_API_KEY: _key, ...noKey } = env;
-    expect(() => loadConversationConfig(noKey)).toThrow(/TTS_OPENROUTER_API_KEY/);
-    expect(() => loadConversationConfig({ ...env, TTS_OPENROUTER_VOICES: 'xiaoyou-default' })).toThrow(
-      /TTS_OPENROUTER_VOICES/,
+    const { TTS_API_KEY: _key, ...noKey } = env;
+    expect(() => loadConversationConfig(noKey)).toThrow(/TTS_API_KEY/);
+    expect(loadConversationConfig({ ...noKey, OPENROUTER_API_KEY: 'sk-or-shared' }).tts).toMatchObject({ apiKey: 'sk-or-shared' });
+    expect(() => loadConversationConfig({ ...env, TTS_OPENROUTER_VOICES: 'a=b' })).toThrow(/TTS_OPENROUTER_VOICES → TTS_VOICES/);
+    expect(() => loadConversationConfig({ ...env, TTS_VOICES: 'xiaoyou-default' })).toThrow(
+      /TTS_VOICES/,
     );
   });
 });

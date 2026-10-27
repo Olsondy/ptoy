@@ -194,7 +194,7 @@ describe('IndexTTS FastAPI failures', () => {
 
 describe('TTS_BACKEND=fastapi config', () => {
   it('selects the FastAPI backend without requiring TTS_REF_AUDIO', () => {
-    const config = loadConversationConfig({ TTS_BACKEND: 'fastapi', TTS_FASTAPI_URL: 'http://10.0.0.2:8002' });
+    const config = loadConversationConfig({ TTS_BACKEND: 'fastapi', TTS_BASE_URL: 'http://10.0.0.2:8002' });
     expect(config.tts).toEqual({
       backend: 'fastapi',
       url: 'http://10.0.0.2:8002',
@@ -203,11 +203,14 @@ describe('TTS_BACKEND=fastapi config', () => {
       timeoutMs: 20000,
     });
     expect(createTtsBackend(config.tts).name).toBe('indextts-fastapi');
+    // Switching backends without a TTS_BASE_URL picks each backend's own default.
+    expect(loadConversationConfig({ TTS_BACKEND: 'fastapi' }).tts.url).toBe('http://127.0.0.1:8002');
+    expect(loadConversationConfig({ TTS_BACKEND: 'gradio', TTS_REF_AUDIO: 'ref.wav' }).tts.url).toBe('http://127.0.0.1:7860');
   });
 
   it("a character's tts_emo_weight replaces TTS_EMO_WEIGHT as emo_alpha (ADR 0009)", async () => {
     server = await startFakeTtsFastApi();
-    const config = loadConversationConfig({ TTS_BACKEND: 'fastapi', TTS_FASTAPI_URL: server.url });
+    const config = loadConversationConfig({ TTS_BACKEND: 'fastapi', TTS_BASE_URL: server.url });
     const tuned = createTtsBackend(config.tts, 'zhixin', { speed: 1.1, emoWeight: 0.3 });
     await tuned.synthesize({ text: '唉。', emotion: '哀' }, never());
     await createTtsBackend(config.tts, 'zhixia', { speed: 1 }).synthesize({ text: '唉。', emotion: '哀' }, never());
