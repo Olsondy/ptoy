@@ -1,1 +1,2 @@
 /deploy/cloud/** text eol=lf
+resources/prototypes/** linguist-documentation
