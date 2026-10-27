@@ -14,7 +14,8 @@
     "test": "vitest run",
     "sim:call": "node ../../scripts/run-agent.mjs sim:call",
     "emotion:compliance": "node ../../scripts/run-agent.mjs emotion:compliance",
-    "chat": "node ../../scripts/run-agent.mjs chat"
+    "chat": "node ../../scripts/run-agent.mjs chat",
+    "check:characters": "node ../../scripts/run-agent.mjs check:characters"
   },
   "dependencies": {
     "@livekit/agents": "^1.9.3",

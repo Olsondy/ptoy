@@ -12,6 +12,7 @@ const commands = {
   'sim:call': ['scripts/sim-call.ts'],
   'emotion:compliance': ['scripts/emotion-compliance.ts'],
   chat: ['scripts/chat.ts'],
+  'check:characters': ['scripts/check-characters.ts'],
 };
 
 try {

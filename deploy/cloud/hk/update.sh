@@ -18,6 +18,7 @@ main() {
   pnpm install --frozen-lockfile
   pnpm typecheck
   pnpm --filter @ptoy/web build
+  node scripts/run-agent.mjs check:characters --env hk --dir "$src/apps/agent/prompts/characters"
 
   rsync -a --delete apps/web/dist/ /var/www/ptoy/current/
   rsync -a --delete --chown=root:ptoy --chmod=D750,F640 \
