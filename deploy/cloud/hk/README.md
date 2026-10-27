@@ -17,7 +17,9 @@ cd /opt/ptoy/source
 sudo -u ptoy /usr/local/bin/node deploy/cloud/ops.mjs status apps/agent/.env.hk
 ```
 
-更新前先 `maintenance-on` 并 `wait-drain`，确认无通话后停止两个应用服务。保留 `.env.hk`、SQLite 及资源，在 Linux 安装锁定依赖、类型检查、构建并执行 `deploy/cloud/check-native.mjs`，随后更新静态产物、启动服务。健康检查及真实通话通过后执行 `maintenance-off`。更新代码前先核对服务器未提交改动，不能直接覆盖。
+**自动部署**：推送到 `main` 时（只改 `docs/`、`bench/` 或根目录说明文件除外），GitHub Actions `deploy-hk.yml` 通过 SSH 执行 [update.sh](update.sh)。也可以在 Actions 页面手动运行。脚本依次执行：`git reset --hard origin/main` → 安装依赖 → 类型检查 → 构建前端 → 同步 `dist` 和角色文件到 `/var/lib/ptoy/resources/characters` → 重启两个服务 → 健康检查。重启 Agent 时会等正在进行的通话结束。构建或类型检查失败时不重启服务，旧进程继续运行。服务器 `root` 的 `authorized_keys` 中，这把部署 key 被限制为只能执行 `update.sh`；私钥和 host key 分别保存在仓库 secrets `HK_DEPLOY_SSH_KEY`、`HK_SSH_KNOWN_HOSTS`。服务器源码目录不要保留未提交的改动，因为每次部署都会被覆盖。`.env.hk` 不在 Git 中，不受影响；新增环境变量仍需手动修改。
+
+需要维护排空的完整手动更新：更新前先 `maintenance-on` 并 `wait-drain`，确认无通话后停止两个应用服务。保留 `.env.hk`、SQLite 及资源，在 Linux 安装锁定依赖、类型检查、构建并执行 `deploy/cloud/check-native.mjs`，随后更新静态产物、启动服务。健康检查及真实通话通过后执行 `maintenance-off`。更新代码前先核对服务器未提交改动，不能直接覆盖。
 
 邀请码管理使用相同环境和持久数据库：
 
