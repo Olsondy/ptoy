@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { loadAccessConfig, type AccessConfig } from './access/config.js';
 import { loadModelChecksConfig, type ModelChecksConfig } from './access/availability.js';
+import { rejectRenamedEnv } from './env-renames.js';
 
 const livekitSchema = z.object({
   LIVEKIT_URL: z.string().url(),
@@ -88,12 +89,14 @@ export function loadAgentHealthConfig(env: NodeJS.ProcessEnv = process.env) {
 }
 
 const callSchema = z.object({
-  ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
+  ASR_BACKEND: z.enum(['sensevoice', 'openrouter']).default('sensevoice'),
+  ASR_BASE_URL: z.string().url().optional(),
   ASR_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   ASR_LANGUAGE: z.string().min(2).default('zh'),
-  // Hosted OpenAI-compatible ASR (OpenRouter): bearer key and `model` form field. Unset for SenseVoice.
+  // OpenRouter only: bearer key (falls back to OPENROUTER_API_KEY) and `model` form field.
   ASR_API_KEY: z.string().min(1).optional(),
   ASR_MODEL: z.string().min(1).optional(),
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
   TURN_DETECTOR: z.enum(['vad', 'eot', 'transcript']).default('transcript'),
   VAD_MIN_SILENCE_MS: z.coerce.number().int().positive().default(550),
   ENDPOINTING_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(800),
@@ -102,13 +105,20 @@ const callSchema = z.object({
   FALSE_INTERRUPTION_TIMEOUT_MS: z.coerce.number().int().positive().default(1000),
 });
 
+/** Per-backend ASR defaults; `ASR_BASE_URL` is an API base, the plugin appends `/audio/transcriptions`. */
+const ASR_DEFAULTS = {
+  sensevoice: { baseUrl: 'http://127.0.0.1:8001/v1' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'fish-audio/transcribe-1-pro' },
+} as const;
+
 export interface CallConfig {
-  readonly asrUrl: string;
+  readonly asrBackend: 'sensevoice' | 'openrouter';
+  readonly asrBaseUrl: string;
   readonly asrTimeoutMs: number;
   readonly asrLanguage: string;
-  /** Sent as a bearer token when set (hosted ASR); SenseVoice needs none. */
+  /** OpenRouter only: bearer token. */
   readonly asrApiKey?: string;
-  /** Sent as the `model` form field when set (hosted ASR); SenseVoice needs none. */
+  /** OpenRouter only: `model` form field. */
   readonly asrModel?: string;
   /**
    * `vad`: VAD silence ends the turn; `transcript`: like `vad`, but a transcript that stops
@@ -126,18 +136,24 @@ export interface CallConfig {
 }
 
 export function loadCallConfig(env: NodeJS.ProcessEnv = process.env): CallConfig {
+  rejectRenamedEnv(env);
   const parsed = callSchema.safeParse(env);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    throw new Error(`Invalid call pipeline env (see apps/agent/.env.example): ${issues}`);
+  const issues = parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+  const asrKey = parsed.success ? (parsed.data.ASR_API_KEY ?? parsed.data.OPENROUTER_API_KEY) : undefined;
+  if (parsed.success && parsed.data.ASR_BACKEND === 'openrouter' && asrKey === undefined) {
+    issues.push('ASR_API_KEY: required with ASR_BACKEND=openrouter (or set OPENROUTER_API_KEY)');
+  }
+  if (!parsed.success || issues.length > 0) {
+    throw new Error(`Invalid call pipeline env (see apps/agent/.env.example): ${issues.join('; ')}`);
   }
   const e = parsed.data;
+  const hosted = e.ASR_BACKEND === 'openrouter';
   return {
-    asrUrl: e.ASR_URL,
+    asrBackend: e.ASR_BACKEND,
+    asrBaseUrl: e.ASR_BASE_URL ?? ASR_DEFAULTS[e.ASR_BACKEND].baseUrl,
     asrTimeoutMs: e.ASR_TIMEOUT_MS,
     asrLanguage: e.ASR_LANGUAGE,
-    ...(e.ASR_API_KEY !== undefined && { asrApiKey: e.ASR_API_KEY }),
-    ...(e.ASR_MODEL !== undefined && { asrModel: e.ASR_MODEL }),
+    ...(hosted && { asrApiKey: asrKey as string, asrModel: e.ASR_MODEL ?? ASR_DEFAULTS.openrouter.model }),
     turnDetector: e.TURN_DETECTOR,
     vadMinSilenceMs: e.VAD_MIN_SILENCE_MS,
     endpointingMinDelayMs: e.ENDPOINTING_MIN_DELAY_MS,

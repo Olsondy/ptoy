@@ -42,7 +42,7 @@ export function createStt(
   ignore?: (text: string) => boolean,
 ): SenseVoiceSTT {
   return new SenseVoiceSTT({
-    baseUrl: config.asrUrl,
+    baseUrl: config.asrBaseUrl,
     timeoutMs: config.asrTimeoutMs,
     language: config.asrLanguage,
     apiKey: config.asrApiKey,

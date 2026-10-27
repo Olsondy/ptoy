@@ -4,8 +4,8 @@ import { AudioFrame, AudioResampler, AudioResamplerQuality } from '@livekit/rtc-
 /** Audio is sent as a 16 kHz mono 16-bit WAV, SenseVoice's native rate. */
 export const ASR_SAMPLE_RATE = 16000;
 
-/** OpenAI-compatible transcription endpoint of the SenseVoice ASR service, relative to `ASR_URL`. */
-const TRANSCRIPTIONS_PATH = 'v1/audio/transcriptions';
+/** OpenAI-compatible transcription endpoint, relative to `ASR_BASE_URL`. */
+const TRANSCRIPTIONS_PATH = 'audio/transcriptions';
 
 /** SenseVoice emotion classes, from the `<|EMOTION|>` tag in the service's `raw_text`. */
 export type AsrEmotion =
@@ -85,7 +85,7 @@ export class AsrError extends APIError {
 }
 
 export interface SenseVoiceSTTOptions {
-  /** Base URL of the ASR service, e.g. `http://127.0.0.1:8001` (the plugin appends `/v1/audio/transcriptions`). */
+  /** API base of the ASR service, e.g. `http://127.0.0.1:8001/v1` (the plugin appends `/audio/transcriptions`). */
   readonly baseUrl: string;
   /** Per-request timeout in milliseconds. */
   readonly timeoutMs: number;
@@ -249,7 +249,7 @@ async function readErrorBody(res: Response): Promise<{ code?: string; message?: 
 /**
  * Non-streaming STT backed by a SenseVoice ASR service with an OpenAI-compatible
  * `POST /v1/audio/transcriptions` (multipart `file`, `response_format=json` → `{ text, raw_text, elapsed_seconds }`).
- * With `apiKey` + `model` the same request goes to a hosted endpoint (OpenRouter, `ASR_URL=https://openrouter.ai/api`),
+ * With `apiKey` + `model` the same request goes to a hosted endpoint (OpenRouter, `ASR_BASE_URL=https://openrouter.ai/api/v1`),
  * which answers `{ text }` and no inference time. Emotion/events then come from bracketed cues in `text`
  * (`fish-audio/transcribe-1-pro`: `<|speaker:0|>[高兴]…`); models without cues give emotion `unknown`.
  *

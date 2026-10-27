@@ -33,7 +33,7 @@ export const transcribePipeline: CallPipeline = async (ctx, caller) => {
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },
   });
-  logger.info({ asr: config.asrUrl, turnDetector: config.turnDetector }, 'listening to caller');
+  logger.info({ asr: config.asrBaseUrl, turnDetector: config.turnDetector }, 'listening to caller');
 
   ctx.addShutdownCallback(async () => {
     await session.close();

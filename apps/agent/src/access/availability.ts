@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { rejectRenamedEnv } from '../env-renames.js';
 
 const schema = z.object({
   CLOUD_MODEL_CHECKS: z.enum(['true', 'false']).default('false'),
   CLOUD_MODEL_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).max(10000).default(2000),
   CLOUD_MODEL_CHECK_CACHE_MS: z.coerce.number().int().min(0).max(30000).default(3000),
-  ASR_URL: z.string().url().default('http://127.0.0.1:8001'),
+  ASR_BACKEND: z.string().default('sensevoice'),
+  ASR_BASE_URL: z.string().url().default('http://127.0.0.1:8001/v1'),
   LLM_BASE_URL: z.string().url().default('http://127.0.0.1:8080/v1'),
   TTS_FASTAPI_URL: z.string().url().default('http://127.0.0.1:8002'),
   TTS_BACKEND: z.string().default('gradio'),
@@ -14,17 +16,19 @@ const schema = z.object({
 const isOpenRouter = (url: string) => new URL(url).hostname === 'openrouter.ai';
 export interface ModelChecksConfig { enabled: boolean; timeoutMs: number; cacheMs: number; urls: readonly string[] }
 export function loadModelChecksConfig(env: NodeJS.ProcessEnv = process.env): ModelChecksConfig {
+  rejectRenamedEnv(env);
   const e = schema.parse(env);
-  const health = (base: string, llm = false) => {
+  // ASR and LLM bases end in /v1; their /health sits at the service root.
+  const health = (base: string, apiBase = false) => {
     const url = new URL(base);
     const path = url.pathname.replace(/\/$/, '');
-    url.pathname = (llm ? path.replace(/\/v1$/, '') : path) + '/health';
+    url.pathname = (apiBase ? path.replace(/\/v1$/, '') : path) + '/health';
     url.search = ''; url.hash = '';
     return url.href;
   };
   return { enabled: e.CLOUD_MODEL_CHECKS === 'true', timeoutMs: e.CLOUD_MODEL_CHECK_TIMEOUT_MS, cacheMs: e.CLOUD_MODEL_CHECK_CACHE_MS,
     urls: [
-      ...(isOpenRouter(e.ASR_URL) ? [] : [health(e.ASR_URL)]),
+      ...(e.ASR_BACKEND === 'openrouter' ? [] : [health(e.ASR_BASE_URL, true)]),
       ...(isOpenRouter(e.LLM_BASE_URL) ? [] : [health(e.LLM_BASE_URL, true)]),
       ...(e.TTS_BACKEND === 'openrouter' ? [] : [health(e.TTS_FASTAPI_URL)]),
     ] };

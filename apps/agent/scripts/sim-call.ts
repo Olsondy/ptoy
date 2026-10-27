@@ -125,7 +125,8 @@ async function main(): Promise<number> {
   if (fakes.has('asr')) {
     const asr = await startFakeAsr(turns.map(spokenText), 0, turnEmotions);
     servers.push(asr);
-    env.ASR_URL = asr.url;
+    env.ASR_BACKEND = 'sensevoice';
+    env.ASR_BASE_URL = `${asr.url}/v1`;
   }
   let llmRequests: Record<string, unknown>[] = [];
   let ttsCalls: Record<string, unknown>[] = [];

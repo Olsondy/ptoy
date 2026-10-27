@@ -3,6 +3,7 @@ import { AudioFrame } from '@livekit/rtc-node';
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadCallConfig } from '../config.js';
 import { type AsrError, type AsrTranscript, SenseVoiceSTT, asrMetadataOf } from './sensevoice.js';
 
 interface Captured {
@@ -67,7 +68,7 @@ function toneFrame(sampleRate = 48000, channels = 1, ms = 100): AudioFrame {
 }
 
 function makeStt(extra: Partial<ConstructorParameters<typeof SenseVoiceSTT>[0]> = {}) {
-  return new SenseVoiceSTT({ baseUrl, timeoutMs: 2000, language: 'zh', ...extra });
+  return new SenseVoiceSTT({ baseUrl: `${baseUrl}/v1`, timeoutMs: 2000, language: 'zh', ...extra });
 }
 
 describe('SenseVoiceSTT request', () => {
@@ -105,7 +106,7 @@ describe('SenseVoiceSTT request', () => {
   });
 
   it('keeps a base URL path prefix', async () => {
-    await makeStt({ baseUrl: `${baseUrl}/asr` }).recognize(toneFrame());
+    await makeStt({ baseUrl: `${baseUrl}/asr/v1` }).recognize(toneFrame());
     expect(requests[0]!.url).toBe('/asr/v1/audio/transcriptions');
   });
 
@@ -115,7 +116,7 @@ describe('SenseVoiceSTT request', () => {
     expect((await sentForm(requests[0]!)).form.get('model')).toBeNull();
 
     handler = (_req, res) => json(res, 200, { text: '你好呀', usage: { cost: 0.00001 } });
-    const hosted = makeStt({ baseUrl: `${baseUrl}/api`, apiKey: 'sk-or-test', model: 'qwen/qwen3-asr-1.7b' });
+    const hosted = makeStt({ baseUrl: `${baseUrl}/api/v1`, apiKey: 'sk-or-test', model: 'qwen/qwen3-asr-1.7b' });
     const event = await hosted.recognize(toneFrame());
     const req = requests[1]!;
     expect(req.url).toBe('/api/v1/audio/transcriptions');
@@ -234,5 +235,22 @@ describe('SenseVoiceSTT errors', () => {
     handler = (_req, res) => json(res, 200, { transcript: 'x' });
     const error = await recognizeError();
     expect(error.kind).toBe('bad_response');
+  });
+});
+
+describe('ASR config', () => {
+  it('switches between SenseVoice and OpenRouter by ASR_BACKEND, with per-backend defaults', () => {
+    const local = loadCallConfig({ ASR_API_KEY: 'ignored', ASR_MODEL: 'ignored' });
+    expect(local).toMatchObject({ asrBackend: 'sensevoice', asrBaseUrl: 'http://127.0.0.1:8001/v1' });
+    expect(local.asrApiKey).toBeUndefined();
+    expect(local.asrModel).toBeUndefined();
+    expect(loadCallConfig({ ASR_BASE_URL: 'http://192.168.31.82:8001/v1' }).asrBaseUrl).toBe('http://192.168.31.82:8001/v1');
+
+    expect(loadCallConfig({ ASR_BACKEND: 'openrouter', OPENROUTER_API_KEY: 'sk-or-shared' })).toMatchObject({
+      asrBaseUrl: 'https://openrouter.ai/api/v1', asrApiKey: 'sk-or-shared', asrModel: 'fish-audio/transcribe-1-pro',
+    });
+    expect(loadCallConfig({ ASR_BACKEND: 'openrouter', OPENROUTER_API_KEY: 'sk-or-shared', ASR_API_KEY: 'sk-or-asr' }).asrApiKey).toBe('sk-or-asr');
+    expect(() => loadCallConfig({ ASR_BACKEND: 'openrouter' })).toThrow(/ASR_API_KEY: required/);
+    expect(() => loadCallConfig({ ASR_URL: 'https://openrouter.ai/api' })).toThrow(/ASR_URL → ASR_BASE_URL/);
   });
 });

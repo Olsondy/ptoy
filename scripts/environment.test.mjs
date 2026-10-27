@@ -24,15 +24,15 @@ test('environment arguments work through pnpm and leave application arguments in
 test('named environment never imports missing values from local .env or falls back', () => {
   const dir=mkdtempSync(join(tmpdir(),'ptoy-env-'));
   try {
-    writeFileSync(join(dir,'.env'),'ASR_URL=http://127.0.0.1:8001\nLOCAL_ONLY=private\n');
-    writeFileSync(join(dir,'.env.hk'),'ASR_URL=http://100.90.8.73:8001\nCLOUD_ONLY=cloud\n');
+    writeFileSync(join(dir,'.env'),'ASR_BASE_URL=http://127.0.0.1:8001\nLOCAL_ONLY=private\n');
+    writeFileSync(join(dir,'.env.hk'),'ASR_BASE_URL=http://100.90.8.73:8001\nCLOUD_ONLY=cloud\n');
     const local=loadEnvironment(dir,undefined,{});
     const hk=loadEnvironment(dir,'hk',{});
-    assert.equal(local.env.ASR_URL,'http://127.0.0.1:8001');
-    assert.equal(hk.env.ASR_URL,'http://100.90.8.73:8001');
+    assert.equal(local.env.ASR_BASE_URL,'http://127.0.0.1:8001');
+    assert.equal(hk.env.ASR_BASE_URL,'http://100.90.8.73:8001');
     assert.equal(hk.env.LOCAL_ONLY,undefined);
     assert.equal(local.env.CLOUD_ONLY,undefined);
-    assert.equal(loadEnvironment(dir,'hk',{ASR_URL:'http://explicit-override:8001'}).env.ASR_URL,'http://explicit-override:8001');
+    assert.equal(loadEnvironment(dir,'hk',{ASR_BASE_URL:'http://explicit-override:8001'}).env.ASR_BASE_URL,'http://explicit-override:8001');
     assert.throws(()=>loadEnvironment(dir,'missing',{},false),/环境配置不存在/);
     assert.deepEqual(loadEnvironment(join(dir,'missing-directory'),undefined,{},false).env,{});
   } finally { removeFixture(dir); }
@@ -61,10 +61,10 @@ test('Agent launcher passes the selected environment, working directory and appl
     mkdirSync(scripts,{recursive:true});
     mkdirSync(join(agent,'node_modules','tsx','dist'),{recursive:true});
     for (const file of ['run-agent.mjs','environment.mjs']) copyFileSync(new URL(file,import.meta.url),join(scripts,file));
-    writeFileSync(join(agent,'.env'),'ASR_URL=http://local:8001\nLOCAL_ONLY=local-secret\n');
-    writeFileSync(join(agent,'.env.hk'),'ASR_URL=http://tailscale:8001\n');
+    writeFileSync(join(agent,'.env'),'ASR_BASE_URL=http://local:8001\nLOCAL_ONLY=local-secret\n');
+    writeFileSync(join(agent,'.env.hk'),'ASR_BASE_URL=http://tailscale:8001\n');
     writeFileSync(join(agent,'node_modules','tsx','dist','cli.mjs'),
-      'console.log(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),asr:process.env.ASR_URL,local:process.env.LOCAL_ONLY}));');
+      'console.log(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),asr:process.env.ASR_BASE_URL,local:process.env.LOCAL_ONLY}));');
     const run=args=>spawnSync(process.execPath,[join(scripts,'run-agent.mjs'),...args],{encoding:'utf8',env:{}});
     const hk=run(['start','--env','hk','--fixture-option','value']);
     assert.equal(hk.status,0,hk.stderr);

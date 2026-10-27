@@ -88,7 +88,8 @@ LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 LIVEKIT_SERVER_BIN=C:/livekit/livekit-server.exe
 AGENT_PIPELINE=conversation
-ASR_URL=http://127.0.0.1:8001
+ASR_BACKEND=sensevoice
+ASR_BASE_URL=http://127.0.0.1:8001/v1
 ASR_LANGUAGE=zh
 TURN_DETECTOR=transcript
 ENDPOINTING_MIN_DELAY_MS=800
@@ -116,7 +117,7 @@ TTS_EMO_WEIGHT=0.6
 全部模型改用 OpenRouter 时（ADR 0012），不需要启动任何模型服务，第二层可以跳过：
 
 ```ini
-ASR_URL=https://openrouter.ai/api
+ASR_BACKEND=openrouter
 ASR_API_KEY=sk-or-...
 ASR_MODEL=fish-audio/transcribe-1-pro
 LLM_BASE_URL=https://openrouter.ai/api/v1
@@ -234,7 +235,7 @@ New-NetFirewallRule -DisplayName ptoy-udp -Direction Inbound -Action Allow -Prot
 | 现象 | 先检查 |
 |---|---|
 | 页面能打开但麦克风不可用 | 是否用 localhost 或 HTTPS，浏览器麦克风权限 |
-| 无用户字幕 | ASR health、CPU/GPU 实际设备、`ASR_URL`、Agent 的 `ptoy.stt_error` 日志 |
+| 无用户字幕 | ASR health、CPU/GPU 实际设备、`ASR_BASE_URL`、Agent 的 `ptoy.stt_error` 日志 |
 | 有用户字幕，没有回复 | llama-server health、`/v1` 路径、模型别名及 Agent 的 LLM 错误 |
 | 有回复但没声音 | `TTS_BACKEND` 与实际运行的服务是否一致（API :8002 / WebUI :7860）、8002 health、Agent 的 TTS 错误；用 WebUI 时再查参考音频是否在 Agent 本机 |
 | 本机能用，另一台设备不行 | 服务地址、LiveKit 公网/局域网地址、网络及 [防火墙配置](#3-从其他设备访问) |

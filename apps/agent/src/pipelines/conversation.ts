@@ -445,7 +445,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       character: character.id,
       voice: character.voice,
       ttsTuning: character.tts,
-      asr: config.asrUrl,
+      asr: config.asrBaseUrl,
       llm: config.llm.baseUrl,
       model: config.llm.model,
       reasoningEffort: config.llm.reasoningEffort ?? 'not sent',

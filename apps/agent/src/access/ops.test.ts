@@ -37,7 +37,7 @@ beforeEach(async () => {
   modelBase = await listen(models);
   config = loadTokenServerConfig({ LIVEKIT_URL: 'ws://127.0.0.1:1', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'fixture',
     APP_ORIGIN: 'http://localhost', INVITE_DB_PATH: ':memory:', CLOUD_MODEL_CHECKS: 'true', CLOUD_MODEL_CHECK_CACHE_MS: '0', CLOUD_MODEL_CHECK_TIMEOUT_MS: '100',
-    ASR_URL: modelBase + '/asr', LLM_BASE_URL: modelBase + '/llm/v1/', TTS_FASTAPI_URL: modelBase + '/tts' });
+    ASR_BASE_URL: modelBase + '/asr/v1', LLM_BASE_URL: modelBase + '/llm/v1/', TTS_FASTAPI_URL: modelBase + '/tts' });
   vi.mocked(loadCharacters).mockReturnValue(new CharacterCatalog([{ id: 'fixture', name: 'Fixture', description: 'test', voice: 'test', tts: { speed: 1 }, ttsBackends: ['gradio', 'fastapi'], ambience: false, instructions: 'Synthetic test only.' }], 'fixture'));
   store = new AccessStore(':memory:');
   api = createTokenServer(config, undefined, new AccessController(store, config.access, { participants: async () => [], close: async () => {} }));
@@ -113,9 +113,10 @@ describe('cloud admission and maintenance boundary', () => {
   });
   it('does not probe hosted OpenRouter ASR, LLM or TTS', () => {
     const urls = (asr?: string) =>
-      loadModelChecksConfig({ ASR_URL: asr, LLM_BASE_URL: 'https://openrouter.ai/api/v1', TTS_BACKEND: 'openrouter' }).urls;
+      loadModelChecksConfig({ ASR_BACKEND: asr, LLM_BASE_URL: 'https://openrouter.ai/api/v1', TTS_BACKEND: 'openrouter' }).urls;
     expect(urls()).toEqual(['http://127.0.0.1:8001/health']);
-    expect(urls('https://openrouter.ai/api')).toEqual([]);
+    expect(urls('openrouter')).toEqual([]);
+    expect(() => loadModelChecksConfig({ ASR_URL: 'http://127.0.0.1:8001' })).toThrow(/ASR_URL → ASR_BASE_URL/);
   });
   it('shares in-flight probes and bounds cached readiness', async () => {
     let now = 1;
