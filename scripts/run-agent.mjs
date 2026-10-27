@@ -13,6 +13,7 @@ const commands = {
   'emotion:compliance': ['scripts/emotion-compliance.ts'],
   chat: ['scripts/chat.ts'],
   'check:characters': ['scripts/check-characters.ts'],
+  'check:ambience': ['scripts/check-ambience.ts'],
 };
 
 try {

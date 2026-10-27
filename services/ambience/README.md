@@ -48,14 +48,14 @@ python3 services/ambience/convert.py ~/Desktop/voice .data/ambience
 
 本机开发：在 `apps/agent/.env` 里设置 `AMBIENCE_DIR=<仓库>/.data/ambience`（`.data/` 已被 Git 忽略）。
 
-HK 服务器（`.env.hk` 已设置 `AMBIENCE_DIR=/var/lib/ptoy/resources/ambience`）：把按档位命名的素材放进 `.data/ambience`（原始格式即可），然后运行：
+HK 服务器（`.env.hk` 已设置 `AMBIENCE_DIR=/var/lib/ptoy/resources/ambience`）：先在本机转换并校验，通过后手动上传到这个目录，覆盖同名文件。下一通电话生效，不用重启。
 
 ```bash
-bash deploy/cloud/hk/sync-ambience.sh            # 转换 → 校验 → 镜像上传，下一通电话生效
-bash deploy/cloud/hk/sync-ambience.sh --check    # 只转换和校验，不上传
+python3 services/ambience/convert.py ~/Desktop/voice .data/ambience-out
+pnpm --filter @ptoy/agent check:ambience -- .data/ambience-out
 ```
 
-脚本在临时目录里转换，不改动 `.data/ambience` 里的原文件，沿用其中的 `manifest.json`。校验不通过就不上传。上传是镜像同步，服务器上多出的文件会被删除。
+校验按 Agent 读取的方式检查清单和每个循环文件，通过时会列出所有档位。上传后的文件要让 `ptoy` 用户可读（当前为 `root:ptoy`、`0640`）。
 
 ## 验证
 
