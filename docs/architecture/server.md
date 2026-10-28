@@ -218,6 +218,8 @@ HK 主机 `38.55.199.239` 的基础服务采用独立安装：Tailscale 来自�
 
 HK 应用部署使用独立 Git 克隆 `/opt/ptoy/source`（GitHub `Olsondy/ptoy`），Node `22.23.4`、pnpm `10.18.0`；当前工作区尚未提交的环境启动改动单独同步，不伪装成已提交版本。`ptoy-token.service` / `ptoy-agent.service` 由专用 `ptoy` 用户运行，调用 `scripts/run-agent.mjs` 的 `--env hk` 入口，读取源码目录中的 `apps/agent/.env.hk`（`root:ptoy`、`0640`）。数据库和角色资源位于 `/var/lib/ptoy`，前端构建产物单独复制至 `/var/www/ptoy/current`。域名确定为 `voice.bocayouth.cn` 与 `rtc.bocayouth.cn`；Cloudflare 代理 HTTPS 到现有 OpenLiteSpeed 的两个新增虚拟主机，复用覆盖这两个子域名的现有 Cloudflare Origin 证书。HK 单元模板见 `deploy/cloud/hk/`，与旧版 `deploy/cloud/install.sh` 的布局不同，不能混用。
 
+2026-10-25 后续更新：HK 已同步年龄确认入口、字幕默认关闭及布局/滚动调整；原型归档到 `resources/prototypes/`。ASR 切换到 OpenRouter Fish，并拉取 `027ddc3` / `280e67a` 的情绪标签兼容与相关测试更新。服务器按维护、排空、构建、重启流程发布；Linux 类型检查、生产构建、13 项 ASR 测试与原生 VAD 检查通过，本地隔离环境的 10 项入口/字幕/可用性 E2E 通过。服务器使用部署后的 `.env.hk` 实际转写合成中文语音返回 200、耗时 726ms（单次测试）；公网网页与信令 HTTPS 200，旧 PHP 源站 200，公网内部运维路径 403。维护已关闭；Tailscale 服务保留，当前 ASR 调用不依赖本地电脑。真实环境文件不提交。
+
 2026-10-25 应用上线验证（Git 基线 `ece1377c114a5164d65ef8e9da1d4f1a4d9fd08c`，另含本次未提交改动）：
 
 - Linux 上冻结锁文件安装、4 项环境启动测试、workspace 类型检查、前端构建和原生 VAD 推理均通过。两个应用服务已启用开机启动；维护模式已关闭，模型就绪。
