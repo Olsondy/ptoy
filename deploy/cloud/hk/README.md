@@ -40,6 +40,8 @@ sudo -u ptoy /usr/local/bin/node scripts/run-agent.mjs invite --env hk create '�
 
 账号是 SFTP-only：`ChrootDirectory /srv/sftp/ambience`，登录后只能看到上面两个目录，没有 shell、不能转发端口。ForceCommand 的 umask 为 `0022`，上传后文件是 `0644` —— 网页由 OpenLiteSpeed 以 `nobody` 运行，只有 world-readable 才读得到。
 
+**改动 `update.sh` 时注意**：部署当次执行的仍是**磁盘上的旧版脚本** —— bash 在开始时就把文件解析完，之后 `git reset --hard` 才替换它。所以新逻辑（例如 `--exclude=chatvideo/`）从**下一次**部署才生效，第一次带上改动的部署会按旧逻辑跑一遍。改这个脚本后，部署完要确认上传目录和素材是否还在，必要时补一次部署。
+
 `/var/www/ptoy/current/chatvideo/` 必须在 [update.sh](update.sh) 的 rsync 排除名单里（`--exclude=chatvideo/`），否则每次部署都会把上传的素材删掉。目录由部署脚本 `install -d -m 2775 -o ambience -g ptoy` 保证存在。
 
 网页侧的路径约定见 `apps/web/src/video/playlist.ts`：片段相对 `chatvideo/` 写，`commonchat/common1.mp4` 对应 `<APP_ORIGIN>/chatvideo/commonchat/common1.mp4`。本地开发不需要 SFTP —— 把文件放在仓库根的 `video/`，`scripts/app.mjs` 会把 `VIDEO_DIR` 指过去。
