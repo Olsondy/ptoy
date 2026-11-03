@@ -12,6 +12,8 @@ export interface IndexTTSOptions {
   readonly segmenter?: SegmenterOptions;
   /** Gets each `stream()` reply's first `<bg:…>` level (ADR 0013), before its audio is synthesized. */
   readonly onAmbience?: (level: string) => void;
+  /** Gets each `stream()` reply's first known `<video:…>` scene, before its audio is synthesized. */
+  readonly onVideo?: (scene: string) => void;
 }
 
 /** Interleaved s16 → mono by averaging channels. */
@@ -74,6 +76,7 @@ export class IndexTTS extends tts.TTS {
   readonly #backend: TtsBackend;
   readonly #segmenter: SegmenterOptions | undefined;
   readonly #onAmbience: ((level: string) => void) | undefined;
+  readonly #onVideo: ((scene: string) => void) | undefined;
   readonly #logger = log().child({ tts: 'indextts' });
   /** Tail of the serialization chain. */
   #lock: Promise<void> = Promise.resolve();
@@ -83,6 +86,7 @@ export class IndexTTS extends tts.TTS {
     this.#backend = opts.backend;
     this.#segmenter = opts.segmenter;
     this.#onAmbience = opts.onAmbience;
+    this.#onVideo = opts.onVideo;
   }
 
   override get model(): string {
@@ -112,7 +116,7 @@ export class IndexTTS extends tts.TTS {
   }
 
   stream(options?: { connOptions?: APIConnectOptions }): tts.SynthesizeStream {
-    return new SegmentedSynthesizeStream(this, this.#segmenter, options?.connOptions, this.#onAmbience);
+    return new SegmentedSynthesizeStream(this, this.#segmenter, options?.connOptions, this.#onAmbience, this.#onVideo);
   }
 
   /**

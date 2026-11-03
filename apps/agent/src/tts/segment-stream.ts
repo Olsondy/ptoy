@@ -29,6 +29,7 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
   readonly #tts: SegmentSynthesizer;
   readonly #segmenterOptions: SegmenterOptions | undefined;
   readonly #onAmbience: ((level: string) => void) | undefined;
+  readonly #onVideo: ((scene: string) => void) | undefined;
   #segmentError: Error | undefined;
 
   constructor(
@@ -36,11 +37,13 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
     segmenterOptions?: SegmenterOptions,
     connOptions?: APIConnectOptions,
     onAmbience?: (level: string) => void,
+    onVideo?: (scene: string) => void,
   ) {
     super(synth, connOptions);
     this.#tts = synth;
     this.#segmenterOptions = segmenterOptions;
     this.#onAmbience = onAmbience;
+    this.#onVideo = onVideo;
   }
 
   override get error(): Error | undefined {
@@ -55,6 +58,7 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
     let previous: Promise<void> = Promise.resolve();
     const pending: Promise<void>[] = [];
     let ambienceReported = false;
+    let videoReported = false;
 
     const synthesize = async (segment: Segment, after: Promise<void>) => {
       this.markStarted();
@@ -86,6 +90,10 @@ export class SegmentedSynthesizeStream extends tts.SynthesizeStream {
         if (!ambienceReported && segment.ambience !== undefined) {
           ambienceReported = true;
           this.#onAmbience?.(segment.ambience);
+        }
+        if (!videoReported && segment.video !== undefined) {
+          videoReported = true;
+          this.#onVideo?.(segment.video);
         }
         const task = synthesize(segment, previous);
         // Keep ordering even if a segment fails; the failure itself surfaces via the plugin.

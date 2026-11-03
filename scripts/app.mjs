@@ -187,6 +187,7 @@ if (stopping || buildCode !== 0) {
   if (stopping) await new Promise(() => {});
   start('web', 'pnpm', ['--filter', '@ptoy/web', 'preview', '--port', String(webPort), '--strictPort'], {
     TOKEN_SERVER_URL: `http://127.0.0.1:${tokenPort}`,
+    VIDEO_DIR: env.VIDEO_DIR || join(root, 'video'),
   });
 
   log(`\n打开 http://localhost:${webPort} 开始通话（Ctrl+C 停止）\n`);
