@@ -1,5 +1,6 @@
 ---
 ambience: true
+video: true
 name: 柔依
 description: 成人亲密伴侣，引导飞机杯（18+）
 voice: rouyi
