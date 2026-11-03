@@ -210,6 +210,11 @@ TTS 首段       1300ms            800ms               0ms（直接播放语气�
 - 发给 LLM 的请求里，历史中的每条 AI 回复前补上它播出后的档位（如 `<bg:mid>…`）。只改这次请求的副本，提交的对话历史和字幕不带标签。不补时，Dolphin 看到自己以前的回复都没有标签，第 2 轮起就不再写（2026-10-27 实测）
 - 每轮一条 `ambience` 日志（`tag` / `from` / `to` / `ignored`）
 
+### 通话画面
+- 角色 front matter 写 `video: true` 时启用；角色列表接口带上 `video: true`，网页把球体换成静音视频，其他角色仍是球体。片段不进 Git，HK 由 `/chatvideo/` 静态提供（见 `deploy/cloud/hk/README.md`）
+- 画面规则（`apps/agent/src/video/cue.ts`）拼在人设后面；LLM 在每段回复开头写 `<video:档位>`，档位为 `common` / `takecup` / `slow` / `mid` / `fast`。切换时机与历史补标签同背景音：回复开始播放才生效，Agent 写参与者属性 `ptoy.video`，网页据此选播放列表
+- 模型有时把回复包成 `{"reply":"…",…}`：只有回复开头的 `{"` 当包裹处理，`reply` 字段边收边解码交给分段，首句不等对象闭合；正文中间的 `{` 照常念出
+
 ## 9. 运维注意
 
 应用配置按环境保存在 `apps/agent/.env`、`apps/agent/.env.hk` 等文件中；`pnpm app --env hk` 及 Agent/Token 启动命令的 `--env hk` 只加载 `.env.hk`，不叠加或回退到本地 `.env`，进程环境变量仍可显式覆盖配置。省略 `--env` 保持原本地启动方式。当前 HK 配置的 ASR、LLM 与 TTS 均使用 OpenRouter；ASR 为 `https://openrouter.ai/api` 的 `fish-audio/transcribe-1-pro`，已从本地 `.env` 单独同步 ASR 配置到 `.env.hk`；Tailscale 保留用于私网访问，不再是当前 ASR 的必经链路。生产 LiveKit 使用 `LIVEKIT_CONFIG` 指定的配置文件，不能用开发模式启动。真实环境文件不提交，本地 `.env` 保持不变。HK 已上线，当前操作入口为 [HK 部署说明](../../deploy/cloud/hk/README.md)，不使用旧安装器的 `/etc/ptoy/app.env`。

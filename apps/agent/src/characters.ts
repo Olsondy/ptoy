@@ -17,6 +17,8 @@ export interface CharacterSummary {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  /** The page plays the call videos instead of the orb (`video: true`); absent = orb. */
+  readonly video?: boolean;
 }
 
 /** Per-character TTS tuning from the front matter (ADR 0009); sent with every synthesis request. */
@@ -42,6 +44,8 @@ export interface Character extends CharacterSummary {
   readonly ttsBackends: readonly TtsBackendName[];
   /** Background ambience follows the reply's `<bg:…>` tags (`ambience: true`, ADR 0013); default off. */
   readonly ambience: boolean;
+  /** The reply's `<video:…>` tag picks the clips the page plays (`video: true`); default off. */
+  readonly video: boolean;
   /** Full system prompt: the persona followed by the shared call rules. */
   readonly instructions: string;
 }
@@ -120,7 +124,7 @@ function parseFlag(id: string, key: string, raw: string | undefined): boolean {
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?/;
 
 /**
- * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n[tts_backends: …]\n[ambience: true]\n---\n<persona>`;
+ * `---\nname: …\ndescription: …\nvoice: …\n[tts_speed: …]\n[tts_max_pause_ms: …]\n[tts_emo_weight: …]\n[tts_style: …]\n[tts_backends: …]\n[ambience: true]\n[video: true]\n---\n<persona>`;
  * only flat `key: value` lines are supported.
  */
 export function parseCharacterFile(id: string, text: string, rules: string): Character {
@@ -147,6 +151,7 @@ export function parseCharacterFile(id: string, text: string, rules: string): Cha
     tts,
     ttsBackends: parseTtsBackends(id, fields.get('tts_backends')),
     ambience: parseFlag(id, 'ambience', fields.get('ambience')),
+    video: parseFlag(id, 'video', fields.get('video')),
     instructions: shared ? `${persona}\n\n${shared}` : persona,
   };
 }
@@ -173,6 +178,6 @@ export function loadCharacters(dir: string, defaultId: string, opts: LoadCharact
   return new CharacterCatalog(characters, defaultId);
 }
 
-export function summarize({ id, name, description }: Character): CharacterSummary {
-  return { id, name, description };
+export function summarize({ id, name, description, video }: Character): CharacterSummary {
+  return video ? { id, name, description, video: true } : { id, name, description };
 }

@@ -16,6 +16,7 @@ describe('parseCharacterFile', () => {
       tts: { speed: 1 },
       ttsBackends: ['gradio', 'fastapi'],
       ambience: false,
+      video: false,
       instructions: '你叫小悠。\n\n通话规则',
     });
   });
@@ -25,6 +26,13 @@ describe('parseCharacterFile', () => {
     expect(parseCharacterFile('a', file('ambience: true'), '').ambience).toBe(true);
     expect(parseCharacterFile('a', file('ambience: false'), '').ambience).toBe(false);
     expect(() => parseCharacterFile('a', file('ambience: yes'), '')).toThrow(/ambience: yes/);
+  });
+
+  it('reads `video: true` and rejects anything but true / false', () => {
+    const file = (extra: string) => `---\nname: 柔意\nvoice: v\n${extra}\n---\n你叫柔意。`;
+    expect(parseCharacterFile('a', file('video: true'), '').video).toBe(true);
+    expect(parseCharacterFile('a', file(''), '').video).toBe(false);
+    expect(() => parseCharacterFile('a', file('video: on'), '')).toThrow(/video: on/);
   });
 
   it('reads the optional TTS tuning and rejects values out of range', () => {

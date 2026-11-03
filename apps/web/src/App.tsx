@@ -9,6 +9,7 @@ import { CaptionsToggle } from './CaptionsToggle';
 import { CallTranscript } from './CallTranscript';
 import { CharacterPicker } from './CharacterPicker';
 import { CharacterLinkButton } from './CharacterLinkButton';
+import { CallOrb } from './orb/CallOrb';
 import { CallVideo } from './video/CallVideo';
 import { type CallStatus, useCall } from './useCall';
 import { useCharacters } from './useCharacters';
@@ -33,7 +34,8 @@ export function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const inCall = call.status !== 'disconnected';
-  const characterName = characters.options.find((character) => character.id === characters.selectedId)?.name ?? '伙伴';
+  const selected = characters.options.find((character) => character.id === characters.selectedId);
+  const characterName = selected?.name ?? '伙伴';
   const fixedUnavailable = characters.locked && (characters.loading || !characters.selectedId || Boolean(characters.error));
   useEffect(() => {
     if (access.resolved && !access.authenticated && inCall) call.resolveAccessLoss();
@@ -73,8 +75,8 @@ export function App() {
             </div>
           </header>
           <section className="call-stage" data-captions={captions ? 'on' : 'off'} aria-label="语音通话">
-            <div className="call-orb-status">
-              <CallVideo room={call.room} />
+            <div className="call-orb-status" data-media={selected?.video ? 'video' : 'orb'}>
+              {selected?.video ? <CallVideo room={call.room} /> : <CallOrb room={call.room} status={call.status} />}
               <p className="call-status sr-only" data-testid="call-status" data-status={call.status} aria-live="polite">
                 {STATUS_LABEL[call.status]}
               </p>
