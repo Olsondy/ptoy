@@ -19,3 +19,6 @@ __pycache__/
 
 # bench outputs (compare_ref_audio.py)
 bench/out/
+
+# 视频素材不进仓库：由服务器通过 SFTP 上传后静态提供（见 deploy/cloud/hk/README.md）
+/video/
