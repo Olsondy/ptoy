@@ -20,7 +20,10 @@ main() {
   pnpm --filter @ptoy/web build
   node scripts/run-agent.mjs check:characters --env hk --dir "$src/apps/agent/prompts/characters"
 
-  rsync -a --delete apps/web/dist/ /var/www/ptoy/current/
+  # 素材上传目录：由 SFTP 账号（ambience）写入，网页以 /chatvideo/ 取用。
+  # 必须在 --delete 的排除名单里，否则每次部署都会把上传的文件删掉。
+  install -d -m 2775 -o ambience -g ptoy /var/www/ptoy/current/chatvideo
+  rsync -a --delete --exclude=chatvideo/ apps/web/dist/ /var/www/ptoy/current/
   rsync -a --delete --chown=root:ptoy --chmod=D750,F640 \
     apps/agent/prompts/characters/ /var/lib/ptoy/resources/characters/
 
