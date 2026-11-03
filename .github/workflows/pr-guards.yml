@@ -7,6 +7,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # 单个新增文件的体积上限；超过基本可以确定是二进制素材误入。
+  MAX_FILE_BYTES: 5242880
+  # 本次 PR 新增文件的合计上限；素材常常是一堆小文件凑成大体积。
+  MAX_TOTAL_BYTES: 5242880
+
 jobs:
   large-files:
     name: 新增文件体积
@@ -17,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fail when a new file exceeds 5 MB
+      - name: Fail when new files exceed the size budget
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -38,20 +44,27 @@ jobs:
             exit 0
           fi
 
-          limit=$((5 * 1024 * 1024))
-          found=0
+          total=0
+          oversized=0
           while IFS= read -r path; do
             [ -n "$path" ] || continue
             [ -f "$path" ] || continue
             size=$(wc -c < "$path")
-            if [ "$size" -gt "$limit" ]; then
-              printf '%s  %s bytes\n' "$path" "$size"
-              found=1
+            total=$((total + size))
+            if [ "$size" -gt "$MAX_FILE_BYTES" ]; then
+              printf '单文件超限: %s  %s bytes\n' "$path" "$size"
+              oversized=1
             fi
           done <<< "$added"
 
-          if [ "$found" -ne 0 ]; then
-            echo "::error::新增文件超过 5 MB。素材与音视频走外部目录，不进 Git（见 AGENTS.md）。"
+          printf '本次 PR 新增文件合计: %s bytes（上限 %s）\n' "$total" "$MAX_TOTAL_BYTES"
+
+          if [ "$oversized" -ne 0 ]; then
+            echo "::error::有新增文件超过 $MAX_FILE_BYTES bytes。素材与音视频走外部目录，不进 Git（见 AGENTS.md）。"
             exit 1
           fi
-          echo "新增文件都在 5 MB 以内"
+          if [ "$total" -gt "$MAX_TOTAL_BYTES" ]; then
+            echo "::error::新增文件合计 $total bytes，超过 $MAX_TOTAL_BYTES bytes。素材与音视频走外部目录，不进 Git（见 AGENTS.md）。"
+            exit 1
+          fi
+          echo "新增文件体积在预算内"
