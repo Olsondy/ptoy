@@ -35,7 +35,7 @@ sudo -u ptoy /usr/local/bin/node scripts/run-agent.mjs invite --env hk create '�
 
 | 登录后可见 | 服务器实际目录 | 谁读 |
 |---|---|---|
-| `/upload/` | `/var/lib/ptoy/resources/ambience/`（bind mount） | Agent（背景音 manifest） |
+| `/audio/` | `/var/lib/ptoy/resources/ambience/`（bind mount） | Agent（背景音 manifest） |
 | `/video/` | `/var/www/ptoy/current/chatvideo/`（bind mount） | 网页 `/chatvideo/<相对路径>` |
 
 账号是 SFTP-only：`ChrootDirectory /srv/sftp/ambience`，登录后只能看到上面两个目录，没有 shell、不能转发端口。ForceCommand 的 umask 为 `0022`，上传后文件是 `0644` —— 网页由 OpenLiteSpeed 以 `nobody` 运行，只有 world-readable 才读得到。
