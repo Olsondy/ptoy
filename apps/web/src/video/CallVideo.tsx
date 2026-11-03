@@ -1,7 +1,7 @@
 import { RoomEvent, type Room } from 'livekit-client';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadAllVideos } from './local';
-import { nextClip, parseVideoScene, playbackClips, type VideoScene } from './playlist';
+import { useEffect, useRef, useState } from 'react';
+import { localVideoUrl } from './local';
+import { allVideoSources, nextClip, parseVideoScene, playbackClips, type VideoScene } from './playlist';
 
 const ATTRIBUTE_VIDEO = 'ptoy.video';
 
@@ -142,18 +142,32 @@ function ClipStage({ scene, clips }: { readonly scene: VideoScene; readonly clip
   );
 }
 
-function useLocalLibrary(): ReadonlyMap<string, string> | undefined {
-  const [library, setLibrary] = useState<ReadonlyMap<string, string>>();
+/** Blob URLs for the clips on screen now; the previous ones keep playing until these are ready. */
+function useLocalClips(remotes: readonly string[]): readonly string[] {
+  const key = remotes.join('\n');
+  const [shown, setShown] = useState<readonly string[]>([]);
   useEffect(() => {
-    let cancel = false;
-    void loadAllVideos().then((loaded) => {
-      if (!cancel) setLibrary(loaded);
+    if (!key) return;
+    let cancelled = false;
+    // A file that fails stays on its remote URL so playback can still start.
+    void Promise.all(key.split('\n').map((url) => localVideoUrl(url).catch(() => url))).then((clips) => {
+      if (!cancelled) setShown(clips);
     });
     return () => {
-      cancel = true;
+      cancelled = true;
     };
+  }, [key]);
+  return shown;
+}
+
+/** Warms the clips the current scene does not need yet, so switching scenes stays instant. */
+function useWarmLibrary(): void {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      for (const url of allVideoSources()) void localVideoUrl(url).catch(() => undefined);
+    }, 3000);
+    return () => window.clearTimeout(timer);
   }, []);
-  return library;
 }
 
 function useAgentSpeaking(room: Room | undefined): boolean {
@@ -183,15 +197,12 @@ function useAgentSpeaking(room: Room | undefined): boolean {
   return speaking;
 }
 
-/** Muted looping clips. Every file is downloaded once, then played from a local blob URL. */
+/** Muted looping clips. The scene's clips load first; the rest warm up in the background. */
 export function CallVideo({ room }: { readonly room: Room | undefined }) {
   const scene = useVideoScene(room);
   const speaking = useAgentSpeaking(room);
-  const library = useLocalLibrary();
-  const clipKey = library
-    ? playbackClips(scene, speaking).map((url) => library.get(url) ?? url).join('\n')
-    : '';
-  const clips = useMemo(() => (clipKey ? clipKey.split('\n') : []), [clipKey]);
+  const clips = useLocalClips(playbackClips(scene, speaking));
+  useWarmLibrary();
   if (clips.length === 0) return <div className="call-video" data-testid="call-video" data-scene={scene} />;
   return <ClipStage scene={scene} clips={clips} />;
 }
