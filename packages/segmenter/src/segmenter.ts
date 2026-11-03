@@ -266,7 +266,13 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
           i = open + 1;
           continue;
         }
-        if (found.reply) pushText(found.reply, out);
+        // An unwrapped reply continues the sentence: rescan it together with the rest, so a
+        // `[喜]` inside the JSON is parsed like any other tag instead of being spoken.
+        if (found.parsed) {
+          consume(found.reply + found.rest, out);
+          return;
+        }
+        pushText(found.reply, out);
         i = open + (raw.length - open - found.rest.length);
         continue;
       }

@@ -1,8 +1,18 @@
 /**
  * A leading `{"reply":"…","intensity":"…"}` object the model writes after `<video:…>`.
  * Speech and subtitles keep `reply` only. Incomplete input stays buffered.
+ *
+ * `parsed` says whether `reply` came out of a real `reply` field: only then may the caller
+ * treat it as plain sentence text. When the object is not a reply wrapper, `reply` is the
+ * raw object and the caller must speak it as-is.
  */
-export function leadingReplyJson(input: string): { reply: string; rest: string } | "incomplete" | "not-json" {
+export interface LeadingReplyJson {
+  readonly reply: string;
+  readonly rest: string;
+  readonly parsed: boolean;
+}
+
+export function leadingReplyJson(input: string): LeadingReplyJson | "incomplete" | "not-json" {
   if (!input.startsWith("{")) return "not-json";
   let i = 1;
   while (i < input.length && /\s/.test(input[i]!)) i++;
@@ -12,10 +22,10 @@ export function leadingReplyJson(input: string): { reply: string; rest: string }
   if (split === "incomplete") return "incomplete";
   try {
     const value = JSON.parse(split.json) as { reply?: unknown };
-    if (typeof value.reply !== "string") return { reply: split.json, rest: split.rest };
-    return { reply: value.reply, rest: split.rest };
+    if (typeof value.reply !== "string") return { reply: split.json, rest: split.rest, parsed: false };
+    return { reply: value.reply, rest: split.rest, parsed: true };
   } catch {
-    return { reply: split.json, rest: split.rest };
+    return { reply: split.json, rest: split.rest, parsed: false };
   }
 }
 
