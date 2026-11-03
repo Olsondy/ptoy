@@ -1,0 +1,43 @@
+name: PR guards
+
+# 确定性红线，只做机器能判定的事；语义审查交给人和 Codex。
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  large-files:
+    name: 新增文件体积
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail when a new file exceeds 5 MB
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          limit=$((5 * 1024 * 1024))
+          found=0
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ -f "$path" ] || continue
+            size=$(wc -c < "$path")
+            if [ "$size" -gt "$limit" ]; then
+              printf '%s  %s bytes\n' "$path" "$size"
+              found=1
+            fi
+          done < <(git diff --name-only --diff-filter=A "$base" HEAD)
+
+          if [ "$found" -ne 0 ]; then
+            echo "::error::新增文件超过 5 MB。素材与音视频走外部目录，不进 Git（见 AGENTS.md）。"
+            exit 1
+          fi
+          echo "新增文件都在 5 MB 以内"

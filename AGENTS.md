@@ -57,4 +57,6 @@ Issue 存放在 GitHub Issues（`gh` CLI）。见 `docs/agents/issue-tracker.md`
 
 - 用简体中文写审查评论。
 - 重点检查会导致 HK 自动部署失败的改动，例如新增环境变量没有写进 `apps/agent/.env.example`。
+- 大文件与素材默认不进 Git：音频、视频、模型等放外部目录，由服务端映射（参考 `services/ambience/`）；确需入库时在当次 PR 写明理由。
+- 新增静态资源路径必须在生产链路里真实存在：HK 由 OpenLiteSpeed 服务 `/var/www/ptoy/current`，`update.sh` 带 `rsync --delete`；只由 Vite dev/preview 提供的路径一律按部署后 404 处理。
 - 不在评论里引用 `apps/agent/prompts/characters/` 中角色文件的内容。
