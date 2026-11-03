@@ -307,14 +307,14 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
-  const video = new VideoCue();
+  const video = character.video ? new VideoCue() : undefined;
   const setVideo = attributePublisher(ctx, ATTRIBUTE_VIDEO, (error) => logger.warn({ err: error }, 'video attribute update failed'));
   const tts = new IndexTTS({
     backend: createTtsBackend(config.tts, character.voice, character.tts),
     sampleRate: config.audioSampleRate,
     segmenter: REPLY_SEGMENTER,
     ...(director && { onAmbience: (level: string) => director.tagged(level) }),
-    onVideo: (scene) => video.tagged(scene),
+    ...(video && { onVideo: (scene: string) => video.tagged(scene) }),
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();
@@ -417,7 +417,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       const fillerSpeaking = [...fillerSpeeches].some((h) => h.scheduled && !h.done());
       if (!fillerSpeaking) {
         director?.replyStarted();
-        const scene = video.heard();
+        const scene = video?.heard();
         if (scene) setVideo(scene);
       }
     }
@@ -437,7 +437,7 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   await session.start({
     agent: new CharacterAgent(
-      { instructions: [character.instructions, ambience ? ambienceRules(ambience) : '', videoRules()].filter(Boolean).join('\n\n') },
+      { instructions: [character.instructions, ambience ? ambienceRules(ambience) : '', video ? videoRules() : ''].filter(Boolean).join('\n\n') },
       toneOf,
       (entry) => logger.info(entry, 'llm reply'),
       fillerHooks,

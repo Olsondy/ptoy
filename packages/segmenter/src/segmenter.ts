@@ -1,5 +1,5 @@
 import { DEFAULT_EMOTION, parseTag, type Emotion } from "./emotion.ts";
-import { leadingReplyJson } from "./reply-json.ts";
+import { createReplyJsonScanner, type ReplyJsonScanner } from "./reply-json.ts";
 import { boundaryAt, graphemes, hasContent, isContent, isTrailing, normalize } from "./text.ts";
 
 export interface Segment {
@@ -133,6 +133,8 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   let ambience: string | undefined;
   /** The reply's first known `<video:…>` scene. */
   let video: string | undefined;
+  /** Set while the reply's leading `{"reply":…}` wrapper is streaming in. */
+  let json: ReplyJsonScanner | undefined;
 
   /**
    * Find the next cut in the buffer, or null if more input is needed.
@@ -256,25 +258,21 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
       }
 
       if (raw[open] === "{") {
-        const found = leadingReplyJson(raw.slice(open));
-        if (found === "incomplete") {
-          pending = raw.slice(open);
-          return;
-        }
-        if (found === "not-json") {
+        // Only a reply that opens with `{"` is a wrapper; a brace later in the text is spoken.
+        let next = open + 1;
+        while (next < raw.length && /\s/.test(raw[next]!)) next++;
+        if (json || firstDone || hasContent(buffer) || (next < raw.length && raw[next] !== '"')) {
           pushText("{", out);
           i = open + 1;
           continue;
         }
-        // An unwrapped reply continues the sentence: rescan it together with the rest, so a
-        // `[喜]` inside the JSON is parsed like any other tag instead of being spoken.
-        if (found.parsed) {
-          consume(found.reply + found.rest, out);
+        if (next === raw.length) {
+          pending = raw.slice(open);
           return;
         }
-        pushText(found.reply, out);
-        i = open + (raw.length - open - found.rest.length);
-        continue;
+        json = createReplyJsonScanner();
+        feedJson(raw.slice(open + 1), out);
+        return;
       }
 
       let close = open + 1;
@@ -300,7 +298,27 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     }
   }
 
+  /**
+   * Inside a reply wrapper. The decoded `reply` text is scanned like any reply text, so a `[喜]`
+   * in it is a tag; meanwhile `pending` holds that decoded text's incomplete tag, not raw input.
+   */
+  function feedJson(input: string, out: Segment[]): void {
+    const result = json!.feed(input);
+    if (result.text) {
+      const decoded = pending + result.text;
+      pending = "";
+      consume(decoded, out);
+    }
+    if (!result.closed) return;
+    json = undefined;
+    if (result.raw !== undefined) pushText(result.raw, out);
+    const rest = pending + result.rest;
+    pending = "";
+    consume(rest, out);
+  }
+
   function clear(): void {
+    json = undefined;
     pending = "";
     buffer = "";
     firstDone = false;
@@ -314,6 +332,10 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   return {
     push(token) {
       const out: Segment[] = [];
+      if (json) {
+        feedJson(token, out);
+        return out;
+      }
       const raw = pending + token;
       pending = "";
       consume(raw, out);
@@ -321,8 +343,11 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     },
     end() {
       const out: Segment[] = [];
+      const unfinished = json?.unfinished();
+      json = undefined;
       // A "<bg:mi" the reply ended on never became a directive: it was text.
       if (pending.startsWith(DIRECTIVE_OPEN) || pending.startsWith("{")) pushText(pending, out);
+      if (unfinished !== undefined) pushText(unfinished, out);
       pending = "";
       drain(out);
       emit(buffer, out);

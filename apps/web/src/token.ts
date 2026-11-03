@@ -7,7 +7,13 @@ export interface CallToken {
   readonly attemptId: string;
   readonly controlToken: string;
 }
-export interface CharacterOption { readonly id: string; readonly name: string; readonly description: string }
+export interface CharacterOption {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  /** Plays the call videos instead of the orb. */
+  readonly video?: boolean;
+}
 export interface CharacterList { readonly defaultId: string; readonly characters: readonly CharacterOption[] }
 export interface AccessSession { authenticated: boolean; expiresAt?: number; code?: string }
 export type Availability = { available: true } | { available: false; reason: 'maintenance' | 'models_unavailable' };

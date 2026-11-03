@@ -139,7 +139,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   padding-block: 24px 8px;
 }
 /* With captions off, the orb stays centered; errors still take space in normal flow. */
-.call-orb-status { position: relative; display: flex; flex-direction: column; align-items: center; width: min(100%, 28rem); flex: 1; min-height: 0; }
+.call-orb-status { position: relative; display: flex; flex-direction: column; align-items: center; }
+.call-orb-status[data-media="video"] { width: min(100%, 28rem); flex: 1; min-height: 0; }
 .call-video { position: relative; width: 100%; flex: 1; min-height: 0; }
 .call-video video,
 .call-video canvas {
@@ -158,7 +159,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .orb-canvas { position: absolute; inset: -22%; width: 144%; height: 144%; pointer-events: none; }
 .call-conversation { width: min(100%, 40rem); min-height: 0; text-align: center; }
 .call-stage[data-captions="on"] { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); justify-items: center; gap: 24px; }
-.call-stage[data-captions="on"] .call-orb-status { width: min(100%, 22rem); }
+.call-stage[data-captions="on"] .orb-slot { width: min(60vw, 30dvh, 300px); min-width: 120px; }
+.call-stage[data-captions="on"] .call-orb-status[data-media="video"] { width: min(100%, 22rem); }
 .call-stage[data-captions="on"] .call-conversation { height: 100%; }
 .call-stage[data-captions="off"] .transcript-errors { margin-top: 16px; }
 .call-welcome { padding: 24px 0 28px; }
