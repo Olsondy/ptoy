@@ -31,7 +31,7 @@ sudo -u ptoy /usr/local/bin/node scripts/run-agent.mjs invite --env hk create '�
 
 ## 素材上传（SFTP）
 
-音频与视频素材不进仓库，由 SFTP 账号 `ambience` 上传；网页与 Agent 各自读取自己的那份：
+音频与视频素材不进仓库，由 SFTP 账号 `ambience` 上传；网页与 Agent 各自读取自己的那份。登录后落在 chroot 根，只看得到下面两个目录：
 
 | 登录后可见 | 服务器实际目录 | 谁读 |
 |---|---|---|
