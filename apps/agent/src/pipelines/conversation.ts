@@ -15,6 +15,7 @@ import { DEFAULT_EMOTION, type Emotion, type SegmenterOptions } from '@ptoy/segm
 import { existsSync } from 'node:fs';
 import { AmbienceBed } from '../ambience/bed.js';
 import { AmbienceDirector } from '../ambience/director.js';
+import { ATTRIBUTE_VIDEO, VideoCue, videoRules } from '../video/cue.js';
 import { type Ambience, ambienceRules, loadAmbience } from '../ambience/manifest.js';
 import { ATTRIBUTE_CHARACTER, type Character, loadCharacters } from '../characters.js';
 import { loadConversationConfig } from '../config.js';
@@ -145,6 +146,7 @@ class CharacterAgent extends voice.Agent {
   readonly #toneOf: (userText: string) => Emotion;
   readonly #onReply: (entry: LlmReplyLog) => void;
   readonly #ambience: AmbienceDirector | undefined;
+  readonly #video: VideoCue | undefined;
   /** Signals the current turn's reply audio is ready (first TTS frame); set per filler turn. */
   #replyAudioReady: (() => void) | undefined;
 
@@ -155,12 +157,14 @@ class CharacterAgent extends voice.Agent {
     fillers?: FillerHooks,
     /** Ambience (ADR 0013): told when a reply's TTS starts; tags the request's history. */
     ambience?: AmbienceDirector,
+    video?: VideoCue,
   ) {
     super(options);
     this.#toneOf = toneOf;
     this.#onReply = onReply;
     this.#fillers = fillers;
     this.#ambience = ambience;
+    this.#video = video;
   }
 
   /**
@@ -170,7 +174,8 @@ class CharacterAgent extends voice.Agent {
    */
   override async llmNode(chatCtx: ChatContext, toolCtx: llm.ToolContext, modelSettings: ModelSettings) {
     const toned = withUserTone(chatCtx, this.#toneOf);
-    const ctx = this.#ambience ? this.#ambience.withTaggedHistory(toned) : toned;
+    const tagged = this.#ambience ? this.#ambience.withTaggedHistory(toned) : toned;
+    const ctx = this.#video ? this.#video.withTaggedHistory(tagged) : tagged;
     const stream = await voice.Agent.default.llmNode(this, ctx, toolCtx, modelSettings);
     if (!stream) return stream;
     const last = ctx.items.at(-1);
@@ -213,6 +218,7 @@ class CharacterAgent extends voice.Agent {
   /** Reply audio passes through unchanged; its first frame tells a held filler to stand down. */
   override async ttsNode(text: ReadableStream<string> | AsyncIterable<string>, modelSettings: ModelSettings) {
     this.#ambience?.replyGenerating();
+    this.#video?.replyGenerating();
     const ready = this.#replyAudioReady;
     const audio = await voice.Agent.default.ttsNode(this, text, modelSettings);
     if (!audio || !ready) return audio;
@@ -301,11 +307,14 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
     logger.debug({ tone }, 'user tone for the llm');
     return tone;
   };
+  const video = new VideoCue();
+  const setVideo = attributePublisher(ctx, ATTRIBUTE_VIDEO, (error) => logger.warn({ err: error }, 'video attribute update failed'));
   const tts = new IndexTTS({
     backend: createTtsBackend(config.tts, character.voice, character.tts),
     sampleRate: config.audioSampleRate,
     segmenter: REPLY_SEGMENTER,
     ...(director && { onAmbience: (level: string) => director.tagged(level) }),
+    onVideo: (scene) => video.tagged(scene),
   });
   // Loads the character's voice on the TTS service while the caller is still settling in (ADR 0008).
   tts.prewarm();
@@ -406,7 +415,11 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
       setAgentError('');
       // The speech queue runs one speech at a time: a scheduled, unfinished filler is the one heard.
       const fillerSpeaking = [...fillerSpeeches].some((h) => h.scheduled && !h.done());
-      if (!fillerSpeaking) director?.replyStarted();
+      if (!fillerSpeaking) {
+        director?.replyStarted();
+        const scene = video.heard();
+        if (scene) setVideo(scene);
+      }
     }
   });
   session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
@@ -424,11 +437,12 @@ export const conversationPipeline: CallPipeline = async (ctx, caller) => {
 
   await session.start({
     agent: new CharacterAgent(
-      { instructions: ambience ? `${character.instructions}\n\n${ambienceRules(ambience)}` : character.instructions },
+      { instructions: [character.instructions, ambience ? ambienceRules(ambience) : '', videoRules()].filter(Boolean).join('\n\n') },
       toneOf,
       (entry) => logger.info(entry, 'llm reply'),
       fillerHooks,
       director,
+      video,
     ),
     room: ctx.room,
     inputOptions: { participantIdentity: caller.identity },

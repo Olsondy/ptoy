@@ -28,3 +28,19 @@ sudo -u ptoy /usr/local/bin/node scripts/run-agent.mjs invite --env hk create '�
 ```
 
 邀请码明文仅创建时显示，不写入仓库或公共网页。
+
+## 素材上传（SFTP）
+
+音频与视频素材不进仓库，由 SFTP 账号 `ambience` 上传；网页与 Agent 各自读取自己的那份。登录后落在 chroot 根，只看得到下面两个目录：
+
+| 登录后可见 | 服务器实际目录 | 谁读 |
+|---|---|---|
+| `/audio/` | `/var/lib/ptoy/resources/ambience/`（bind mount） | Agent（背景音 manifest） |
+| `/video/` | `/var/www/ptoy/current/chatvideo/`（bind mount） | 网页 `/chatvideo/<相对路径>` |
+
+账号是 SFTP-only：`ChrootDirectory /srv/sftp/ambience`，登录后只能看到上面两个目录，没有 shell、不能转发端口。ForceCommand 的 umask 为 `0022`，上传后文件是 `0644` —— 网页由 OpenLiteSpeed 以 `nobody` 运行，只有 world-readable 才读得到。
+
+`/var/www/ptoy/current/chatvideo/` 必须在 [update.sh](update.sh) 的 rsync 排除名单里（`--exclude=chatvideo/`），否则每次部署都会把上传的素材删掉。目录由部署脚本 `install -d -m 2775 -o ambience -g ptoy` 保证存在。
+
+网页侧的路径约定见 `apps/web/src/video/playlist.ts`：片段相对 `chatvideo/` 写，`commonchat/common1.mp4` 对应 `<APP_ORIGIN>/chatvideo/commonchat/common1.mp4`。本地开发不需要 SFTP —— 把文件放在仓库根的 `video/`，`scripts/app.mjs` 会把 `VIDEO_DIR` 指过去。
+

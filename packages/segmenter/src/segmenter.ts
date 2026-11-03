@@ -1,4 +1,5 @@
 import { DEFAULT_EMOTION, parseTag, type Emotion } from "./emotion.ts";
+import { leadingReplyJson } from "./reply-json.ts";
 import { boundaryAt, graphemes, hasContent, isContent, isTrailing, normalize } from "./text.ts";
 
 export interface Segment {
@@ -10,6 +11,11 @@ export interface Segment {
    * caller checks it against its levels. Absent until the reply has such a tag.
    */
   readonly ambience?: string;
+  /**
+   * Scene from the reply's first `<video:…>` tag (`common`, `takecup`, `slow`, `mid`, `fast`).
+   * Unknown values are removed from the text and not recorded.
+   */
+  readonly video?: string;
 }
 
 export interface SegmenterOptions {
@@ -70,7 +76,8 @@ const TAG_CLOSE = new Set(["]", "】"]);
 
 /**
  * `<key:value>` directive tags (ADR 0013): removed from the text and never cut a segment.
- * Only `<bg:level>` is used; other keys are dropped. Anything that cannot grow into one ("<3",
+ * `<bg:level>` and `<video:scene>` are kept; other keys are dropped. A video scene is one of
+ * `common`, `takecup`, `slow`, `mid`, `fast`. Anything that cannot grow into a directive ("<3",
  * "a<b") is literal text at once, so a stray "<" never holds the reply back.
  */
 const DIRECTIVE_OPEN = "<";
@@ -78,6 +85,10 @@ const DIRECTIVE_CLOSE = ">";
 const DIRECTIVE = /^([A-Za-z]+):([A-Za-z0-9_-]*)$/;
 const DIRECTIVE_PREFIX = /^[A-Za-z]*(?::[A-Za-z0-9_-]*)?$/;
 const AMBIENCE_KEY = "bg";
+const VIDEO_KEY = "video";
+const VIDEO_SCENES = new Set(["common", "takecup", "slow", "mid", "fast"]);
+/** Longer than an emotion tag: `<video:takecup>` is 13 characters inside the brackets. */
+const DIRECTIVE_MAX = 16;
 
 export interface Segmenter {
   /** Feed one LLM token (any chunking). Returns segments that became complete. */
@@ -120,6 +131,8 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   let dropped = "";
   /** The reply's first `<bg:…>` value. */
   let ambience: string | undefined;
+  /** The reply's first known `<video:…>` scene. */
+  let video: string | undefined;
 
   /**
    * Find the next cut in the buffer, or null if more input is needed.
@@ -171,7 +184,12 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   }
 
   function segment(text: string): Segment {
-    return ambience === undefined ? { text, emotion } : { text, emotion, ambience };
+    return {
+      text,
+      emotion,
+      ...(ambience !== undefined && { ambience }),
+      ...(video !== undefined && { video }),
+    };
   }
 
   function drain(out: Segment[]): void {
@@ -206,11 +224,12 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
   function directive(raw: string, open: number): number | "pending" | "literal" {
     const close = raw.indexOf(DIRECTIVE_CLOSE, open + 1);
     const body = raw.slice(open + 1, close === -1 ? undefined : close);
-    if (body.length > opts.maxTagChars) return "literal";
+    if (body.length > DIRECTIVE_MAX) return "literal";
     if (close === -1) return DIRECTIVE_PREFIX.test(body) ? "pending" : "literal";
     const m = DIRECTIVE.exec(body);
     if (!m) return "literal";
     if (m[1] === AMBIENCE_KEY && ambience === undefined && m[2]) ambience = m[2];
+    if (m[1] === VIDEO_KEY && video === undefined && m[2] && VIDEO_SCENES.has(m[2])) video = m[2];
     return close + 1;
   }
 
@@ -219,7 +238,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     let i = 0;
     while (i < raw.length) {
       let open = i;
-      while (open < raw.length && !TAG_OPEN.has(raw[open]!) && raw[open] !== DIRECTIVE_OPEN) open++;
+      while (open < raw.length && !TAG_OPEN.has(raw[open]!) && raw[open] !== DIRECTIVE_OPEN && raw[open] !== "{") open++;
       if (open > i) pushText(raw.slice(i, open), out);
       if (open === raw.length) return;
 
@@ -233,6 +252,28 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
           pushText(DIRECTIVE_OPEN, out);
           i = open + 1;
         } else i = next;
+        continue;
+      }
+
+      if (raw[open] === "{") {
+        const found = leadingReplyJson(raw.slice(open));
+        if (found === "incomplete") {
+          pending = raw.slice(open);
+          return;
+        }
+        if (found === "not-json") {
+          pushText("{", out);
+          i = open + 1;
+          continue;
+        }
+        // An unwrapped reply continues the sentence: rescan it together with the rest, so a
+        // `[喜]` inside the JSON is parsed like any other tag instead of being spoken.
+        if (found.parsed) {
+          consume(found.reply + found.rest, out);
+          return;
+        }
+        pushText(found.reply, out);
+        i = open + (raw.length - open - found.rest.length);
         continue;
       }
 
@@ -267,6 +308,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     tagged = false;
     dropped = "";
     ambience = undefined;
+    video = undefined;
   }
 
   return {
@@ -280,7 +322,7 @@ export function createSegmenter(options: SegmenterOptions = {}): Segmenter {
     end() {
       const out: Segment[] = [];
       // A "<bg:mi" the reply ended on never became a directive: it was text.
-      if (pending.startsWith(DIRECTIVE_OPEN)) pushText(pending, out);
+      if (pending.startsWith(DIRECTIVE_OPEN) || pending.startsWith("{")) pushText(pending, out);
       pending = "";
       drain(out);
       emit(buffer, out);

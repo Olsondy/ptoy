@@ -9,7 +9,7 @@ import { CaptionsToggle } from './CaptionsToggle';
 import { CallTranscript } from './CallTranscript';
 import { CharacterPicker } from './CharacterPicker';
 import { CharacterLinkButton } from './CharacterLinkButton';
-import { CallOrb } from './orb/CallOrb';
+import { CallVideo } from './video/CallVideo';
 import { type CallStatus, useCall } from './useCall';
 import { useCharacters } from './useCharacters';
 import { useAccess } from './useAccess';
@@ -74,7 +74,7 @@ export function App() {
           </header>
           <section className="call-stage" data-captions={captions ? 'on' : 'off'} aria-label="语音通话">
             <div className="call-orb-status">
-              <CallOrb room={call.room} status={call.status} />
+              <CallVideo room={call.room} />
               <p className="call-status sr-only" data-testid="call-status" data-status={call.status} aria-live="polite">
                 {STATUS_LABEL[call.status]}
               </p>
