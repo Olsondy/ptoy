@@ -22,8 +22,22 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$BASE_REF"
+          # checkout 在 PR 上只拉 refs/pull/N/merge，这里显式建出 origin/<base>，
+          # 否则 merge-base 拿不到值，检查会静默通过。
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
           base=$(git merge-base "origin/$BASE_REF" HEAD)
+          if [ -z "$base" ]; then
+            echo "::error::找不到 origin/$BASE_REF 与 HEAD 的公共祖先"
+            exit 1
+          fi
+
+          # 用变量接住 diff 输出：命令失败时 set -e 才会生效（进程替换里的失败会被吞掉）。
+          added=$(git diff --name-only --diff-filter=A "$base" HEAD)
+          if [ -z "$added" ]; then
+            echo "本次没有新增文件"
+            exit 0
+          fi
+
           limit=$((5 * 1024 * 1024))
           found=0
           while IFS= read -r path; do
@@ -34,7 +48,7 @@ jobs:
               printf '%s  %s bytes\n' "$path" "$size"
               found=1
             fi
-          done < <(git diff --name-only --diff-filter=A "$base" HEAD)
+          done <<< "$added"
 
           if [ "$found" -ne 0 ]; then
             echo "::error::新增文件超过 5 MB。素材与音视频走外部目录，不进 Git（见 AGENTS.md）。"
