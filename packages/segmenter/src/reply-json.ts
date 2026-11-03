@@ -1,52 +1,91 @@
 /**
- * A leading `{"reply":"…","intensity":"…"}` object the model writes after `<video:…>`.
- * Speech and subtitles keep `reply` only. Incomplete input stays buffered.
- *
- * `parsed` says whether `reply` came out of a real `reply` field: only then may the caller
- * treat it as plain sentence text. When the object is not a reply wrapper, `reply` is the
- * raw object and the caller must speak it as-is.
+ * A `{"reply":"…","intensity":"…"}` object the model sometimes wraps its reply in. Speech and
+ * subtitles keep `reply` only, decoded as it streams in, so the first sentence is not held until
+ * the object closes. The scanner is fed the input after the opening `{`.
  */
-export interface LeadingReplyJson {
-  readonly reply: string;
-  readonly rest: string;
-  readonly parsed: boolean;
+export interface ReplyJsonScanner {
+  /**
+   * Decoded `reply` characters from `input`. Once the object closes, `rest` is the input after it,
+   * and `raw` is the whole object when it had no string `reply` field (speak it as-is).
+   */
+  feed(input: string): { readonly text: string; readonly closed: false } | { readonly text: string; readonly closed: true; readonly rest: string; readonly raw?: string };
+  /** The object text so far when the reply ended inside an object that had no `reply` field. */
+  unfinished(): string | undefined;
 }
 
-export function leadingReplyJson(input: string): LeadingReplyJson | "incomplete" | "not-json" {
-  if (!input.startsWith("{")) return "not-json";
-  let i = 1;
-  while (i < input.length && /\s/.test(input[i]!)) i++;
-  if (i >= input.length) return "incomplete";
-  if (input[i] !== '"') return "not-json";
-  const split = splitObject(input);
-  if (split === "incomplete") return "incomplete";
-  try {
-    const value = JSON.parse(split.json) as { reply?: unknown };
-    if (typeof value.reply !== "string") return { reply: split.json, rest: split.rest, parsed: false };
-    return { reply: value.reply, rest: split.rest, parsed: true };
-  } catch {
-    return { reply: split.json, rest: split.rest, parsed: false };
-  }
-}
+const ESCAPES: Readonly<Record<string, string>> = { n: "\n", t: " ", r: "", b: "", f: "" };
 
-function splitObject(input: string): { json: string; rest: string } | "incomplete" {
-  let depth = 0;
+export function createReplyJsonScanner(): ReplyJsonScanner {
+  let raw = "{";
+  let depth = 1;
   let inString = false;
   let escape = false;
-  for (let i = 0; i < input.length; i++) {
-    const c = input[i]!;
-    if (inString) {
-      if (escape) escape = false;
-      else if (c === "\\") escape = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') inString = true;
-    else if (c === "{") depth++;
-    else if (c === "}") {
-      depth--;
-      if (depth === 0) return { json: input.slice(0, i + 1), rest: input.slice(i + 1) };
-    }
+  let unicode: string | undefined;
+  let expect: "key" | "value" = "key";
+  let readingKey = false;
+  let key = "";
+  let inReply = false;
+  let sawReply = false;
+
+  function take(c: string): string {
+    if (inReply) return c;
+    if (readingKey) key += c;
+    return "";
   }
-  return "incomplete";
+
+  return {
+    feed(input) {
+      let text = "";
+      for (let i = 0; i < input.length; i++) {
+        const c = input[i]!;
+        raw += c;
+        if (unicode !== undefined) {
+          unicode += c;
+          if (unicode.length === 4) {
+            const code = Number.parseInt(unicode, 16);
+            if (!Number.isNaN(code)) text += take(String.fromCharCode(code));
+            unicode = undefined;
+          }
+          continue;
+        }
+        if (inString) {
+          if (escape) {
+            escape = false;
+            if (c === "u") unicode = "";
+            else text += take(ESCAPES[c] ?? c);
+          } else if (c === "\\") escape = true;
+          else if (c === '"') {
+            inString = false;
+            readingKey = false;
+            inReply = false;
+          } else text += take(c);
+          continue;
+        }
+        if (c === '"') {
+          inString = true;
+          if (depth !== 1) continue;
+          if (expect === "key") {
+            readingKey = true;
+            key = "";
+          } else if (key === "reply" && !sawReply) {
+            inReply = true;
+            sawReply = true;
+          }
+        } else if (depth === 1 && c === ":") expect = "value";
+        else if (depth === 1 && c === ",") expect = "key";
+        else if (c === "{" || c === "[") depth++;
+        else if (c === "}" || c === "]") {
+          depth--;
+          if (depth === 0) {
+            const rest = input.slice(i + 1);
+            return sawReply ? { text, closed: true, rest } : { text, closed: true, rest, raw };
+          }
+        }
+      }
+      return { text, closed: false };
+    },
+    unfinished() {
+      return sawReply ? undefined : raw;
+    },
+  };
 }
