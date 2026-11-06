@@ -26,6 +26,19 @@ context /api/ {
   addDefaultCharset       off
 }
 
+# SFTP-uploaded videos (see deploy/cloud/hk/README.md). Only .mp4/.webm are served (rewrite below);
+# nosniff + sandbox stop an uploaded HTML/SVG from running as a same-origin page.
+context /chatvideo/ {
+  type                    NULL
+  location                /var/www/ptoy/current/chatvideo/
+  allowBrowse             1
+  addDefaultCharset       off
+  extraHeaders            <<<END_extraHeaders
+Header set X-Content-Type-Options nosniff
+Header set Content-Security-Policy sandbox
+END_extraHeaders
+}
+
 context / {
   type                    NULL
   location                /var/www/ptoy/current/
@@ -39,6 +52,9 @@ rewrite {
   rules                   <<<END_rules
 RewriteRule ^/?internal(?:/|$) - [F,L,NC]
 RewriteRule ^/?\. - [F,L]
+RewriteCond %{REQUEST_URI} ^/chatvideo/ [NC]
+RewriteCond %{REQUEST_URI} !\.(mp4|webm)$ [NC]
+RewriteRule ^ - [F,L]
 RewriteRule ^ - [E=Cache-Control:no-cache]
 END_rules
 }
