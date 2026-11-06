@@ -25,9 +25,10 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.HK_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.HK_SSH_KNOWN_HOSTS }}
+          HK_HOST: ${{ secrets.HK_SSH_HOST }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/hk_deploy && chmod 600 ~/.ssh/hk_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           # The key's forced command on the server runs update.sh; nothing else is allowed.
-          ssh -i ~/.ssh/hk_deploy -o BatchMode=yes -o ServerAliveInterval=30 root@38.55.199.239
+          ssh -i ~/.ssh/hk_deploy -o BatchMode=yes -o ServerAliveInterval=30 "root@$HK_HOST"
