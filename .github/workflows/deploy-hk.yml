@@ -32,3 +32,38 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           # The key's forced command on the server runs update.sh; nothing else is allowed.
           ssh -i ~/.ssh/hk_deploy -o BatchMode=yes -o ServerAliveInterval=30 "root@$HK_HOST"
+
+  # Every successful HK deploy becomes a GitHub release, so the release list is the production history.
+  release:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag and publish the deployed commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git tag --points-at HEAD | grep -q '^v20'; then
+            echo "$(git rev-parse --short HEAD) is already released"; exit 0
+          fi
+          prev=$(git describe --tags --abbrev=0 --match 'v20*' 2>/dev/null || true)
+          day=$(TZ=Asia/Shanghai date +%Y.%m.%d)
+          tag="v$day"; n=1
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do n=$((n+1)); tag="v$day.$n"; done
+          {
+            echo '已部署到 HK。'
+            echo
+            if [ -n "$prev" ]; then
+              git log "$prev..HEAD" --no-merges --format='- %s (%h)'
+              echo
+              echo "完整变更：https://github.com/$GITHUB_REPOSITORY/compare/$prev...$tag"
+            else
+              echo '首个自动 release；此前的变更见提交历史。'
+            fi
+          } > notes.md
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md
