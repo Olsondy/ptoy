@@ -40,6 +40,8 @@ sudo -u ptoy /usr/local/bin/node scripts/run-agent.mjs invite --env hk create '�
 
 账号是 SFTP-only：`ChrootDirectory /srv/sftp/ambience`，登录后只能看到上面两个目录，没有 shell、不能转发端口。ForceCommand 的 umask 为 `0022`，上传后文件是 `0644` —— 网页由 OpenLiteSpeed 以 `nobody` 运行，只有 world-readable 才读得到。
 
+`/chatvideo/` 在 `ptoy_voice` 虚拟主机里只放行 `.mp4` / `.webm`（其余返回 403），并带 `X-Content-Type-Options: nosniff` 与 `Content-Security-Policy: sandbox`，避免 SFTP 上传的 HTML/SVG 以同源页面运行。配置见 [openlitespeed-app.conf.example](../litespeed/openlitespeed-app.conf.example) 中的 `context /chatvideo/` 与 rewrite 规则。
+
 **改动 `update.sh` 时注意**：部署当次执行的仍是**磁盘上的旧版脚本** —— bash 在开始时就把文件解析完，之后 `git reset --hard` 才替换它。所以新逻辑（例如 `--exclude=chatvideo/`）从**下一次**部署才生效，第一次带上改动的部署会按旧逻辑跑一遍。改这个脚本后，部署完要确认上传目录和素材是否还在，必要时补一次部署。
 
 `/var/www/ptoy/current/chatvideo/` 必须在 [update.sh](update.sh) 的 rsync 排除名单里（`--exclude=chatvideo/`），否则每次部署都会把上传的素材删掉。目录由部署脚本 `install -d -m 2775 -o ambience -g ptoy` 保证存在。
